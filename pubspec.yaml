@@ -1,0 +1,97 @@
+name: go_home
+description: 回家了么 - 寻人平台客户端
+publish_to: 'none'
+version: 1.0.1+2
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # 网络请求
+  dio: ^5.4.0
+
+  # 状态管理
+  provider: ^6.1.0
+
+  # 本地存储
+  shared_preferences: ^2.2.0
+
+  # 图片选择
+  image_picker: ^1.0.0
+
+  # 图片压缩
+  flutter_image_compress: ^2.1.0
+
+  # 图片缓存
+  cached_network_image: ^3.3.0
+
+  # 下拉刷新
+  pull_to_refresh: ^2.0.0
+
+  # Toast 提示
+  fluttertoast: ^8.2.0
+
+  # 系统分享
+  share_plus: ^7.2.0
+
+  # URL 启动器（拨打电话）
+  url_launcher: ^6.2.0
+
+  # Apple 授权登录
+  sign_in_with_apple: ^6.1.0
+  # Apple 登录所需加密库
+  crypto: ^3.0.0
+
+  # 国际化代码生成
+  intl: ^0.20.2
+
+  # WebSocket（聊天室）
+  web_socket_channel: ^2.4.0
+
+  # 表情选择器
+  emoji_picker_flutter: ^1.6.0
+
+  # 视频播放
+  video_player: ^2.8.0
+
+  # 录音
+  record: ^6.2.0
+
+  # 音频播放（语音消息）
+  just_audio: ^0.9.36
+
+  # 文件路径
+  path_provider: ^2.1.0
+
+  # 权限请求
+  permission_handler: ^11.0.0
+
+  audio_session: ^0.1.19
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  assets:
+    - assets/images/
+
+flutter_launcher_icons:
+  android: false
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  remove_alpha_ios: true
+
+  # 国际化
+  # flutter_intl:
+  #   enabled: true

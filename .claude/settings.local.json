@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(/Users/lang/flutter/bin/flutter analyze:*)",
+      "Bash(/Users/lang/flutter/bin/flutter doctor:*)",
+      "Bash(/Users/lang/flutter/bin/flutter clean:*)",
+      "Bash(/Users/lang/flutter/bin/flutter pub get:*)",
+      "Bash(/Users/lang/flutter/bin/flutter build:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(python3:*)",
+      "Bash(/Users/lang/flutter/bin/flutter pub deps:*)",
+      "Bash(flutter build:*)",
+      "WebFetch(domain:pub.dev)",
+      "Bash(flutter pub outdated:*)",
+      "Bash(/Users/lang/flutter/bin/flutter pub outdated:*)",
+      "Bash(pod install:*)",
+      "Bash(gem environment:*)",
+      "Bash(/usr/local/lib/ruby/gems/4.0.0/bin/pod install:*)",
+      "Bash(/Users/lang/development/flutter/bin/flutter pub get:*)",
+      "Bash(file:*)",
+      "Bash(wc:*)",
+      "Bash(identify -verbose:*)",
+      "Bash(brew link:*)",
+      "Bash(export LANG=en_US.UTF-8)",
+      "Bash(export LC_ALL=en_US.UTF-8:*)"
+    ]
+  }
+}

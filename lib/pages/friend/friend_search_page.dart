@@ -102,23 +102,33 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) {
+      messageController.dispose();
+      return;
+    }
 
-    final error = await context.read<FriendProvider>().sendRequest(
-          toId: user.id,
-          message: messageController.text.trim(),
-        );
-
+    final message = messageController.text.trim();
     messageController.dispose();
+
+    final friendProvider = context.read<FriendProvider>();
+    final error = await friendProvider.sendRequest(
+          toId: user.id,
+          message: message,
+        );
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(error ?? l.get('request_sent')),
+        content: Text(error != null ? l.get(error) : l.get('request_sent')),
         duration: const Duration(seconds: 2),
       ),
     );
+
+    // 刷新好友列表，更新搜索结果中的 "已是好友" 状态
+    if (error == null) {
+      friendProvider.loadFriends();
+    }
   }
 
   @override
@@ -224,7 +234,7 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'ID: ${user.id}',
+                    'ID: ${user.displayId}',
                     style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
                   ),
                 ],

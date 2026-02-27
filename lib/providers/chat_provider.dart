@@ -424,6 +424,100 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     _send(data);
   }
 
+  /// 发送私聊文本消息
+  void sendPrivateMessage(int toUserId, String content) {
+    final text = content.trim();
+    if (text.isEmpty) return;
+
+    final filtered = ContentFilter.filter(text);
+
+    if (!isAuthenticated) {
+      debugPrint('[WS] Not authenticated, cannot send private message');
+      return;
+    }
+
+    _send({
+      'type': 'private_message',
+      'to_id': toUserId,
+      'content': filtered,
+    });
+  }
+
+  /// 发送私聊多媒体消息
+  void sendPrivateMediaMessage({
+    required int toUserId,
+    required String msgType,
+    required String mediaUrl,
+    String thumbUrl = '',
+    String content = '',
+    Map<String, dynamic>? mediaInfo,
+  }) {
+    if (!isAuthenticated) {
+      debugPrint('[WS] Not authenticated, cannot send private media');
+      return;
+    }
+
+    final data = <String, dynamic>{
+      'type': 'private_message',
+      'to_id': toUserId,
+      'msg_type': msgType,
+      'content': content,
+      'media_url': mediaUrl,
+      'thumb_url': thumbUrl,
+    };
+    if (mediaInfo != null) {
+      data['media_info'] = mediaInfo;
+    }
+    _send(data);
+  }
+
+  /// 发送群聊文本消息
+  void sendGroupMessage(int groupId, String content) {
+    final text = content.trim();
+    if (text.isEmpty) return;
+
+    final filtered = ContentFilter.filter(text);
+
+    if (!isAuthenticated) {
+      debugPrint('[WS] Not authenticated, cannot send group message');
+      return;
+    }
+
+    _send({
+      'type': 'group_message',
+      'group_id': groupId,
+      'content': filtered,
+    });
+  }
+
+  /// 发送群聊多媒体消息
+  void sendGroupMediaMessage({
+    required int groupId,
+    required String msgType,
+    required String mediaUrl,
+    String thumbUrl = '',
+    String content = '',
+    Map<String, dynamic>? mediaInfo,
+  }) {
+    if (!isAuthenticated) {
+      debugPrint('[WS] Not authenticated, cannot send group media');
+      return;
+    }
+
+    final data = <String, dynamic>{
+      'type': 'group_message',
+      'group_id': groupId,
+      'msg_type': msgType,
+      'content': content,
+      'media_url': mediaUrl,
+      'thumb_url': thumbUrl,
+    };
+    if (mediaInfo != null) {
+      data['media_info'] = mediaInfo;
+    }
+    _send(data);
+  }
+
   // ===== 内部方法 =====
 
   void _setConnectionState(WsConnectionState state) {

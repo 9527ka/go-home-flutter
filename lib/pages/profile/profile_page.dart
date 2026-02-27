@@ -127,7 +127,7 @@ class ProfilePage extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'ID: ${user!.id}',
+                        'ID: ${user!.displayId}',
                         style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.6)),
                       ),
                     ),
@@ -192,6 +192,7 @@ class ProfilePage extends StatelessWidget {
                     onTap: () async {
                       await Navigator.pushNamed(context, AppRoutes.friendListPage);
                       friendProvider.loadFriends();
+                      friendProvider.fetchRequestCount();
                     },
                   ),
                 ],
@@ -252,7 +253,7 @@ class ProfilePage extends StatelessWidget {
                     icon: Icons.info_outline,
                     iconColor: AppTheme.textSecondary,
                     title: l.get('about'),
-                    subtitle: '版本 1.0.0',
+                    subtitle: '${l.get('version')} 1.0.0',
                     onTap: () => Navigator.pushNamed(context, AppRoutes.about),
                   ),
                   if (auth.isLoggedIn) ...[

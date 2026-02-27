@@ -18,6 +18,9 @@ import '../pages/profile/edit_profile_page.dart';
 import '../pages/profile/feedback_page.dart';
 import '../pages/profile/account_settings_page.dart';
 import '../pages/chat/chat_page.dart';
+import '../pages/chat/conversation_list_page.dart';
+import '../pages/chat/blocked_users_page.dart';
+import '../pages/chat/private_chat_page.dart';
 import '../pages/friend/friend_list_page.dart';
 import '../pages/friend/friend_request_page.dart';
 import '../pages/friend/friend_search_page.dart';
@@ -44,6 +47,9 @@ class AppRoutes {
   static const String feedback = '/feedback';
   static const String accountSettings = '/account-settings';
   static const String chatRoom = '/chat';
+  static const String conversations = '/conversations';
+  static const String blockedUsers = '/blocked-users';
+  static const String privateChat = '/private-chat';
 
   // 好友
   static const String friendListPage = '/friends';
@@ -72,6 +78,8 @@ class AppRoutes {
         feedback: (_) => const FeedbackPage(),
         accountSettings: (_) => const AccountSettingsPage(),
         chatRoom: (_) => const ChatPage(),
+        conversations: (_) => const ConversationListPage(),
+        blockedUsers: (_) => const BlockedUsersPage(),
         // 好友
         friendListPage: (_) => const FriendListPage(),
         friendRequests: (_) => const FriendRequestPage(),
@@ -92,6 +100,16 @@ class AppRoutes {
       final post = settings.arguments as PostModel;
       return MaterialPageRoute(
         builder: (_) => PostEditPage(post: post),
+      );
+    }
+    if (settings.name == privateChat) {
+      final args = settings.arguments as Map<String, dynamic>;
+      return MaterialPageRoute(
+        builder: (_) => PrivateChatPage(
+          friendId: args['friendId'] as int,
+          friendName: args['friendName'] as String,
+          friendAvatar: args['friendAvatar'] as String? ?? '',
+        ),
       );
     }
     if (settings.name == groupChat) {

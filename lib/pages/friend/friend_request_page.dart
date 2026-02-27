@@ -4,6 +4,7 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/friend_request.dart';
 import '../../providers/friend_provider.dart';
+import '../../widgets/avatar_widget.dart';
 
 class FriendRequestPage extends StatefulWidget {
   const FriendRequestPage({super.key});
@@ -13,24 +14,19 @@ class FriendRequestPage extends StatefulWidget {
 }
 
 class _FriendRequestPageState extends State<FriendRequestPage> {
-  /// System avatar color and icon mapping
-  static const _systemAvatarStyles = <String, Map<String, dynamic>>{
-    '/system/avatars/avatar_1.svg': {'color': Color(0xFF4A90D9), 'icon': Icons.person},
-    '/system/avatars/avatar_2.svg': {'color': Color(0xFF5BA0E8), 'icon': Icons.person_outline},
-    '/system/avatars/avatar_3.svg': {'color': Color(0xFF34A853), 'icon': Icons.face},
-    '/system/avatars/avatar_4.svg': {'color': Color(0xFF8B5CF6), 'icon': Icons.sentiment_satisfied_alt},
-    '/system/avatars/avatar_5.svg': {'color': Color(0xFFF97316), 'icon': Icons.emoji_people},
-    '/system/avatars/avatar_6.svg': {'color': Color(0xFFEC4899), 'icon': Icons.face_3},
-    '/system/avatars/avatar_7.svg': {'color': Color(0xFFF43F5E), 'icon': Icons.face_4},
-    '/system/avatars/avatar_8.svg': {'color': Color(0xFFA855F7), 'icon': Icons.face_2},
-    '/system/avatars/avatar_9.svg': {'color': Color(0xFF06B6D4), 'icon': Icons.face_5},
-    '/system/avatars/avatar_10.svg': {'color': Color(0xFFEAB308), 'icon': Icons.face_6},
-  };
+  bool _initialLoading = true;
 
   @override
   void initState() {
     super.initState();
-    context.read<FriendProvider>().loadRequests();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await context.read<FriendProvider>().loadRequests();
+    if (mounted) {
+      setState(() => _initialLoading = false);
+    }
   }
 
   Future<void> _acceptRequest(FriendRequestModel request) async {
@@ -40,7 +36,7 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(error ?? l.get('request_accepted')),
+        content: Text(error != null ? l.get(error) : l.get('request_accepted')),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -53,7 +49,7 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(error ?? l.get('request_rejected')),
+        content: Text(error != null ? l.get(error) : l.get('request_rejected')),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -74,7 +70,9 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: requests.isEmpty
+      body: _initialLoading
+          ? const Center(child: CircularProgressIndicator())
+          : requests.isEmpty
           ? _buildEmpty(l)
           : RefreshIndicator(
               onRefresh: () => friendProvider.loadRequests(),
@@ -88,6 +86,11 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
   }
 
   Widget _buildRequestItem(FriendRequestModel request, AppLocalizations l) {
+    // 显示名称：优先 fromNickname，为空时用 ID 兜底
+    final displayName = request.fromNickname.isNotEmpty
+        ? request.fromNickname
+        : 'GH${request.fromId}';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -100,7 +103,7 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildAvatar(request.fromAvatar, request.fromNickname, 40),
+            AvatarWidget(avatarPath: request.fromAvatar, name: displayName, size: 40),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -108,7 +111,7 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
                 children: [
                   // Nickname
                   Text(
-                    request.fromNickname,
+                    displayName,
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
@@ -130,7 +133,7 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
                   const SizedBox(height: 6),
                   // Timestamp
                   Text(
-                    _formatTime(request.createdAt),
+                    _formatTime(context, request.createdAt),
                     style: const TextStyle(fontSize: 11, color: AppTheme.textHint),
                   ),
                   const SizedBox(height: 10),
@@ -187,68 +190,6 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
     );
   }
 
-  Widget _buildAvatar(String avatarPath, String name, double size) {
-    final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
-    final radius = size / 2;
-
-    // System preset avatar
-    if (avatarPath.startsWith('/system/avatars/')) {
-      final style = _systemAvatarStyles[avatarPath];
-      final color = style?['color'] as Color? ?? AppTheme.primaryColor;
-      final icon = style?['icon'] as IconData? ?? Icons.person;
-
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(radius),
-        ),
-        child: Center(
-          child: Icon(icon, size: size * 0.55, color: color),
-        ),
-      );
-    }
-
-    // Network image avatar
-    if (avatarPath.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Image.network(
-          avatarPath,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _buildLetterAvatar(initial, size, radius),
-        ),
-      );
-    }
-
-    // Default letter placeholder
-    return _buildLetterAvatar(initial, size, radius);
-  }
-
-  Widget _buildLetterAvatar(String initial, double size, double radius) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(radius),
-      ),
-      child: Center(
-        child: Text(
-          initial,
-          style: TextStyle(
-            fontSize: size * 0.45,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.primaryColor,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmpty(AppLocalizations l) {
     return Center(
       child: Column(
@@ -286,17 +227,18 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
     );
   }
 
-  String _formatTime(String dateStr) {
+  String _formatTime(BuildContext context, String dateStr) {
+    final l = AppLocalizations.of(context)!;
     try {
       final date = DateTime.parse(dateStr);
       final now = DateTime.now();
       final diff = now.difference(date);
 
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-      if (diff.inHours < 24) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
-      if (diff.inDays < 365) return '${date.month}月${date.day}日';
+      if (diff.inMinutes < 1) return l.get('time_just_now');
+      if (diff.inMinutes < 60) return l.get('time_minutes_ago').replaceAll('{n}', '${diff.inMinutes}');
+      if (diff.inHours < 24) return l.get('time_hours_ago').replaceAll('{n}', '${diff.inHours}');
+      if (diff.inDays < 7) return l.get('time_days_ago').replaceAll('{n}', '${diff.inDays}');
+      if (diff.inDays < 365) return '${date.month}/${date.day}';
       return '${date.year}/${date.month}/${date.day}';
     } catch (e) {
       return dateStr;

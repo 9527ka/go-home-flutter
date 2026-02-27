@@ -1,5 +1,6 @@
 class UserModel {
   final int id;
+  final String userCode; // 用户编号（对外展示，如 GH5K8M2NXR）
   final String nickname;
   final String avatar;
   final String account;
@@ -10,6 +11,7 @@ class UserModel {
 
   UserModel({
     required this.id,
+    this.userCode = '',
     required this.nickname,
     this.avatar = '',
     required this.account,
@@ -22,6 +24,7 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'] ?? 0,
+      userCode: json['user_code'] ?? '',
       nickname: json['nickname'] ?? '',
       avatar: json['avatar'] ?? '',
       account: json['account'] ?? '',
@@ -32,9 +35,13 @@ class UserModel {
     );
   }
 
+  /// 对外展示的用户编号（优先 userCode，兜底显示 ID）
+  String get displayId => userCode.isNotEmpty ? userCode : 'GH$id';
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'user_code': userCode,
       'nickname': nickname,
       'avatar': avatar,
       'account': account,

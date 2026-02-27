@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/friend.dart';
 import '../models/friend_request.dart';
 import '../models/user.dart';
+import '../providers/chat_provider.dart';
 import '../services/friend_service.dart';
 
 /// 好友状态管理
@@ -13,12 +14,38 @@ class FriendProvider extends ChangeNotifier {
   int _pendingRequestCount = 0;
   bool _isLoading = false;
 
+  ChatProvider? _chatProvider;
+  bool _wsRegistered = false;
+
   // Getters
   List<FriendModel> get friends => _friends;
   List<FriendRequestModel> get requests => _requests;
   int get pendingRequestCount => _pendingRequestCount;
   bool get isLoading => _isLoading;
   bool get hasNewRequests => _pendingRequestCount > 0;
+
+  /// 绑定 ChatProvider 并注册 WebSocket 消息监听
+  void bindChatProvider(ChatProvider chatProvider) {
+    if (_wsRegistered && _chatProvider == chatProvider) return;
+    _chatProvider = chatProvider;
+    _wsRegistered = true;
+
+    // 收到好友请求时，自动刷新请求计数
+    chatProvider.registerHandler('friend_request', _onFriendRequest);
+    // 好友请求被接受时，自动刷新好友列表
+    chatProvider.registerHandler('friend_accepted', _onFriendAccepted);
+  }
+
+  void _onFriendRequest(Map<String, dynamic> data) {
+    debugPrint('[Friend] WS friend_request received, refreshing count');
+    fetchRequestCount();
+  }
+
+  void _onFriendAccepted(Map<String, dynamic> data) {
+    debugPrint('[Friend] WS friend_accepted received, refreshing friends');
+    loadFriends();
+    fetchRequestCount();
+  }
 
   /// 加载好友列表
   Future<void> loadFriends() async {
@@ -60,13 +87,14 @@ class FriendProvider extends ChangeNotifier {
   Future<String?> sendRequest({required int toId, String message = ''}) async {
     try {
       final success = await _service.sendRequest(toId: toId, message: message);
-      return success ? null : '发送失败';
+      return success ? null : 'send_failed';
     } catch (e) {
-      return '网络异常，请重试';
+      return 'network_error';
     }
   }
 
   /// 接受好友请求
+  /// 返回 null 表示成功，否则返回 i18n key
   Future<String?> acceptRequest(int requestId) async {
     try {
       final success = await _service.acceptRequest(requestId);
@@ -78,9 +106,9 @@ class FriendProvider extends ChangeNotifier {
         notifyListeners();
         return null;
       }
-      return '操作失败';
+      return 'operation_failed';
     } catch (e) {
-      return '网络异常，请重试';
+      return 'network_error';
     }
   }
 
@@ -94,9 +122,9 @@ class FriendProvider extends ChangeNotifier {
         notifyListeners();
         return null;
       }
-      return '操作失败';
+      return 'operation_failed';
     } catch (e) {
-      return '网络异常，请重试';
+      return 'network_error';
     }
   }
 
@@ -109,9 +137,9 @@ class FriendProvider extends ChangeNotifier {
         notifyListeners();
         return null;
       }
-      return '操作失败';
+      return 'operation_failed';
     } catch (e) {
-      return '网络异常，请重试';
+      return 'network_error';
     }
   }
 
@@ -127,4 +155,14 @@ class FriendProvider extends ChangeNotifier {
 
   /// 判断某用户是否是好友
   bool isFriend(int userId) => _friends.any((f) => f.userId == userId);
+
+  @override
+  void dispose() {
+    // 移除 WebSocket handler
+    if (_chatProvider != null && _wsRegistered) {
+      _chatProvider!.removeHandler('friend_request', _onFriendRequest);
+      _chatProvider!.removeHandler('friend_accepted', _onFriendAccepted);
+    }
+    super.dispose();
+  }
 }

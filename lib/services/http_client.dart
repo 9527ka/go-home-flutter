@@ -107,7 +107,11 @@ class HttpClient {
   }
 
   /// Token 过期统一处理
-  void _handleTokenExpired() {
+  void _handleTokenExpired() async {
+    // 游客本来就没有 Token，不需要跳转登录页
+    final token = await StorageUtil.getToken();
+    if (token == null || token.isEmpty) return;
+
     StorageUtil.clearToken();
     StorageUtil.clearUserInfo();
 

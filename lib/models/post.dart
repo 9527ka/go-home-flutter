@@ -145,8 +145,8 @@ class PostModel {
   /// 是否为儿童类别
   bool get isChild => category == 3;
 
-  /// 是否可编辑（待审核或被驳回）
-  bool get canEdit => status == 0 || status == 4;
+  /// 是否可编辑（待审核、被驳回、举报屏蔽）
+  bool get canEdit => status == 0 || status == 4 || status == 5;
 }
 
 class ClueModel {

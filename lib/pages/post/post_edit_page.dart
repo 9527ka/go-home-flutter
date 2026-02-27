@@ -233,6 +233,43 @@ class _PostEditPageState extends State<PostEditPage> {
                     const SizedBox(height: 16),
                   ],
 
+                  // 举报屏蔽提示
+                  if (widget.post.status == 5) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDEDED),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF5C6CB)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.flag_outlined, color: Color(0xFF721C24), size: 20),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  '您的帖子因被举报违规已屏蔽，请修改后重新提交审核',
+                                  style: TextStyle(color: Color(0xFF721C24), fontSize: 14),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (widget.post.auditRemark != null && widget.post.auditRemark!.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '原因：${widget.post.auditRemark}',
+                              style: const TextStyle(color: Color(0xFF721C24), fontSize: 13),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // 类别（编辑时不允许修改）
                   const Text('寻找类别', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),

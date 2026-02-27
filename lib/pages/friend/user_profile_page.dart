@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
+import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/chat_provider.dart';
@@ -11,12 +12,14 @@ class UserProfilePage extends StatefulWidget {
   final int userId;
   final String nickname;
   final String avatar;
+  final String userCode;
 
   const UserProfilePage({
     super.key,
     required this.userId,
     required this.nickname,
     required this.avatar,
+    this.userCode = '',
   });
 
   /// Show the user profile bottom sheet.
@@ -25,6 +28,7 @@ class UserProfilePage extends StatefulWidget {
     required int userId,
     required String nickname,
     required String avatar,
+    String userCode = '',
   }) {
     showModalBottomSheet(
       context: context,
@@ -37,6 +41,7 @@ class UserProfilePage extends StatefulWidget {
         userId: userId,
         nickname: nickname,
         avatar: avatar,
+        userCode: userCode,
       ),
     );
   }
@@ -77,28 +82,49 @@ class _UserProfilePageState extends State<UserProfilePage> {
     setState(() => _isSendingRequest = false);
 
     final l = AppLocalizations.of(context)!;
-    Fluttertoast.showToast(msg: error ?? l.get('request_sent'));
+    Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
   }
 
   Future<void> _handleToggleBlock() async {
     final chatProvider = context.read<ChatProvider>();
     final isBlocked = chatProvider.isUserBlocked(widget.userId);
+    final l = AppLocalizations.of(context)!;
 
     setState(() => _isBlocking = true);
 
     if (isBlocked) {
       await chatProvider.unblockUser(widget.userId);
+      if (!mounted) return;
+      setState(() => _isBlocking = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l.get('unblock_success')),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
     } else {
       await chatProvider.blockUser(widget.userId);
+      if (!mounted) return;
+      setState(() => _isBlocking = false);
+      // 屏蔽后关闭弹窗，让用户知道可以在屏蔽列表中管理
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l.get('block_success')),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
     }
-
-    if (!mounted) return;
-    setState(() => _isBlocking = false);
   }
 
   void _handleSendMessage() {
-    final l = AppLocalizations.of(context)!;
-    Fluttertoast.showToast(msg: l.get('coming_soon'));
+    // 关闭底部弹窗，然后跳转到私聊页面
+    Navigator.pop(context);
+    Navigator.pushNamed(context, AppRoutes.privateChat, arguments: {
+      'friendId': widget.userId,
+      'friendName': widget.nickname,
+      'friendAvatar': widget.avatar,
+    });
   }
 
   void _handleReport() {
@@ -161,7 +187,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
 
             // User ID
             Text(
-              'ID: ${widget.userId}',
+              'ID: ${widget.userCode.isNotEmpty ? widget.userCode : 'GH${widget.userId}'}',
               style: const TextStyle(
                 fontSize: 13,
                 color: AppTheme.textHint,

@@ -5,6 +5,7 @@ class FriendModel {
   final String nickname;
   final String avatar;
   final String account;
+  final String userCode;
   final String remark; // 好友备注
   final String createdAt;
 
@@ -14,18 +15,22 @@ class FriendModel {
     required this.nickname,
     this.avatar = '',
     this.account = '',
+    this.userCode = '',
     this.remark = '',
     this.createdAt = '',
   });
 
   factory FriendModel.fromJson(Map<String, dynamic> json) {
     final user = json['user'] as Map<String, dynamic>?;
+    final friend = json['friend'] as Map<String, dynamic>?;
+    // 兼容多种 API 返回格式：顶层字段 / user 子对象 / friend 子对象
     return FriendModel(
       id: json['id'] ?? 0,
-      userId: json['friend_id'] ?? json['user_id'] ?? user?['id'] ?? 0,
-      nickname: json['nickname'] ?? user?['nickname'] ?? '',
-      avatar: json['avatar'] ?? user?['avatar'] ?? '',
-      account: json['account'] ?? user?['account'] ?? '',
+      userId: json['friend_id'] ?? json['user_id'] ?? user?['id'] ?? friend?['id'] ?? 0,
+      nickname: json['nickname'] ?? user?['nickname'] ?? friend?['nickname'] ?? '',
+      avatar: json['avatar'] ?? user?['avatar'] ?? friend?['avatar'] ?? '',
+      account: json['account'] ?? user?['account'] ?? friend?['account'] ?? '',
+      userCode: json['user_code'] ?? user?['user_code'] ?? friend?['user_code'] ?? '',
       remark: json['remark'] ?? '',
       createdAt: json['created_at'] ?? '',
     );
@@ -37,6 +42,7 @@ class FriendModel {
         'nickname': nickname,
         'avatar': avatar,
         'account': account,
+        'user_code': userCode,
         'remark': remark,
         'created_at': createdAt,
       };

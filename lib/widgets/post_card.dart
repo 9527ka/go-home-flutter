@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api.dart';
 import '../config/theme.dart';
 import '../models/post.dart';
+import 'report_dialog.dart';
 
 class PostCard extends StatelessWidget {
   final PostModel post;
@@ -142,6 +143,26 @@ class PostCard extends StatelessWidget {
                                       fontWeight: FontWeight.w600),
                                 ),
                               ),
+                            // 举报按钮
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => ReportDialog(
+                                    targetType: 1, // 1=启事
+                                    targetId: post.id,
+                                  ),
+                                );
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  Icons.more_horiz,
+                                  size: 18,
+                                  color: AppTheme.textHint,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ],

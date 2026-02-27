@@ -37,15 +37,16 @@ class ConversationModel {
   bool get isGroup => targetType == 'group';
   bool get hasUnread => unreadCount > 0;
 
-  /// 最后消息预览文本
-  String get lastMessagePreview {
+  /// 最后消息预览文本（需传入翻译函数以支持多语言）
+  /// [tr] 接受 i18n key 返回翻译后的字符串，例如 l.get
+  String lastMessagePreview(String Function(String key) tr) {
     switch (lastMsgType) {
       case 'image':
-        return '[图片]';
+        return tr('media_image');
       case 'video':
-        return '[视频]';
+        return tr('media_video');
       case 'voice':
-        return '[语音]';
+        return tr('media_voice');
       default:
         return lastMessage;
     }

@@ -325,8 +325,8 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
                     onPressed: () {
                       // Placeholder for invite functionality
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Coming soon'),
+                        SnackBar(
+                          content: Text(l.get('coming_soon')),
                           backgroundColor: AppTheme.warningColor,
                         ),
                       );

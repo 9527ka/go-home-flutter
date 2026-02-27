@@ -86,7 +86,7 @@ class ApiConfig {
   static const String userInfo = '/api/user/info';
 
   // WebSocket
-  static const String wsDevUrl = 'ws://127.0.0.1:8282';
+  static const String wsDevUrl = 'ws://127.0.0.1:8383';
   static const String wsProdUrl = 'wss://home.dengshop.com/ws';
   static const String wsUrl = wsProdUrl;
 }

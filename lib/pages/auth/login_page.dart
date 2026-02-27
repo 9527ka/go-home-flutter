@@ -7,6 +7,7 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/validators.dart';
+import '../../widgets/eula_dialog.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -21,6 +22,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _rememberMe = true;
+  bool _agreeTerms = true; // 默认勾选协议
   bool _appleSignInLoading = false;
   bool _quickLoginLoading = false;
 
@@ -31,7 +33,21 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  /// 检查是否同意协议，未勾选时提示
+  bool _checkTermsAgreed() {
+    if (_agreeTerms) return true;
+    final l = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l.get('agree_terms_required')),
+        backgroundColor: AppTheme.warningColor,
+      ),
+    );
+    return false;
+  }
+
   Future<void> _login() async {
+    if (!_checkTermsAgreed()) return;
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<AuthProvider>();
@@ -49,6 +65,7 @@ class _LoginPageState extends State<LoginPage> {
 
   /// Apple 授权登录
   Future<void> _appleSignIn() async {
+    if (!_checkTermsAgreed()) return;
     setState(() => _appleSignInLoading = true);
 
     try {
@@ -106,6 +123,7 @@ class _LoginPageState extends State<LoginPage> {
 
   /// 一键快速登录（游客模式）
   Future<void> _quickLogin() async {
+    if (!_checkTermsAgreed()) return;
     setState(() => _quickLoginLoading = true);
 
     try {
@@ -245,7 +263,55 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // 用户协议勾选
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Checkbox(
+                          value: _agreeTerms,
+                          onChanged: (v) => setState(() => _agreeTerms = v ?? true),
+                          activeColor: AppTheme.primaryColor,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _agreeTerms = !_agreeTerms),
+                          child: Text.rich(
+                            TextSpan(
+                              text: l.get('agree_terms_prefix'),
+                              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                              children: [
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.baseline,
+                                  baseline: TextBaseline.alphabetic,
+                                  child: GestureDetector(
+                                    onTap: () => EulaDialog.show(context),
+                                    child: Text(
+                                      l.get('eula_link_text'),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.primaryColor,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
 
                   // 登录按钮
                   SizedBox(

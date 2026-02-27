@@ -26,15 +26,17 @@ class FriendRequestModel {
 
   factory FriendRequestModel.fromJson(Map<String, dynamic> json) {
     final fromUser = json['from_user'] as Map<String, dynamic>?;
+    final user = json['user'] as Map<String, dynamic>?;
+    // 兼容多种 API 返回格式
     return FriendRequestModel(
       id: json['id'] ?? 0,
-      fromId: json['from_id'] ?? 0,
+      fromId: json['from_id'] ?? fromUser?['id'] ?? user?['id'] ?? 0,
       toId: json['to_id'] ?? 0,
       message: json['message'] ?? '',
       status: _parseStatus(json['status']),
       createdAt: json['created_at'] ?? '',
-      fromNickname: json['from_nickname'] ?? fromUser?['nickname'] ?? '',
-      fromAvatar: json['from_avatar'] ?? fromUser?['avatar'] ?? '',
+      fromNickname: json['from_nickname'] ?? fromUser?['nickname'] ?? user?['nickname'] ?? '',
+      fromAvatar: json['from_avatar'] ?? fromUser?['avatar'] ?? user?['avatar'] ?? '',
     );
   }
 

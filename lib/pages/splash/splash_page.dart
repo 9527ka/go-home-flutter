@@ -7,7 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../widgets/eula_dialog.dart';
+import '../../providers/friend_provider.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -44,20 +44,19 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
     if (!mounted) return;
 
-    // EULA 检查：首次使用必须同意用户协议（Apple Guideline 1.2）
-    final eulaAccepted = await EulaDialog.checkAndShow(context);
-    if (!eulaAccepted) {
-      // 用户拒绝，停留在 Splash 并再次弹出
-      if (mounted) _navigate();
-      return;
-    }
-
-    if (!mounted) return;
-
     // Auth 就绪后，提前预加载首页数据（不阻塞跳转）
     context.read<PostProvider>().refresh();
-    context.read<ChatProvider>().checkUnread();
-    context.read<NotificationProvider>().fetchUnreadCount();
+
+    // 仅登录用户才预加载需要鉴权的数据（游客调用会触发 401）
+    if (authProvider.isLoggedIn) {
+      context.read<ChatProvider>().checkUnread();
+      context.read<NotificationProvider>().fetchUnreadCount();
+
+      // 绑定 FriendProvider 到 ChatProvider（接收 WebSocket 好友通知）
+      final friendProvider = context.read<FriendProvider>();
+      friendProvider.bindChatProvider(context.read<ChatProvider>());
+      friendProvider.fetchRequestCount();
+    }
 
     // 跳转首页
     Navigator.pushReplacementNamed(context, AppRoutes.home);

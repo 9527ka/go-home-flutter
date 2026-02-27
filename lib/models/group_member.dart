@@ -7,37 +7,35 @@ class GroupMemberModel {
   final int groupId;
   final int userId;
   final GroupMemberRole role;
-  final String nickname; // 群内昵称
-  final bool muted;
   final String joinedAt;
-  // 关联用户信息
+  // 关联用户信息（后端 detail 接口已扁平化到顶层）
   final String userNickname;
   final String userAvatar;
+  final String userCode;
 
   GroupMemberModel({
     required this.id,
     required this.groupId,
     required this.userId,
     this.role = GroupMemberRole.member,
-    this.nickname = '',
-    this.muted = false,
     this.joinedAt = '',
     this.userNickname = '',
     this.userAvatar = '',
+    this.userCode = '',
   });
 
   factory GroupMemberModel.fromJson(Map<String, dynamic> json) {
+    // 后端可能以嵌套 user 对象返回，也可能扁平化到顶层
     final user = json['user'] as Map<String, dynamic>?;
     return GroupMemberModel(
       id: json['id'] ?? 0,
       groupId: json['group_id'] ?? 0,
       userId: json['user_id'] ?? user?['id'] ?? 0,
       role: _parseRole(json['role']),
-      nickname: json['nickname'] ?? '',
-      muted: json['muted'] == 1 || json['muted'] == true,
       joinedAt: json['joined_at'] ?? '',
-      userNickname: json['user_nickname'] ?? user?['nickname'] ?? '',
-      userAvatar: json['user_avatar'] ?? user?['avatar'] ?? '',
+      userNickname: json['nickname'] ?? user?['nickname'] ?? '',
+      userAvatar: json['avatar'] ?? user?['avatar'] ?? '',
+      userCode: json['user_code'] ?? user?['user_code'] ?? '',
     );
   }
 
@@ -55,8 +53,8 @@ class GroupMemberModel {
     return GroupMemberRole.member;
   }
 
-  /// 显示名称：优先群昵称，其次用户昵称
-  String get displayName => nickname.isNotEmpty ? nickname : userNickname;
+  /// 显示名称
+  String get displayName => userNickname;
 
   bool get isOwner => role == GroupMemberRole.owner;
   bool get isAdmin => role == GroupMemberRole.admin || role == GroupMemberRole.owner;

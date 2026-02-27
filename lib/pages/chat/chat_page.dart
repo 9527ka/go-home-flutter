@@ -593,44 +593,9 @@ class _ChatPageState extends State<ChatPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_add_outlined, size: 22),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.friendSearch),
-            tooltip: l.get('add_friend'),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, size: 22),
-            onSelected: (value) {
-              switch (value) {
-                case 'add_friend':
-                  Navigator.pushNamed(context, AppRoutes.friendSearch);
-                  break;
-                case 'create_group':
-                  Navigator.pushNamed(context, AppRoutes.groupCreate);
-                  break;
-              }
-            },
-            itemBuilder: (ctx) => [
-              PopupMenuItem(
-                value: 'add_friend',
-                child: Row(
-                  children: [
-                    const Icon(Icons.person_add_outlined, size: 20, color: AppTheme.textPrimary),
-                    const SizedBox(width: 8),
-                    Text(l.get('add_friend')),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'create_group',
-                child: Row(
-                  children: [
-                    const Icon(Icons.group_add_outlined, size: 20, color: AppTheme.textPrimary),
-                    const SizedBox(width: 8),
-                    Text(l.get('create_group')),
-                  ],
-                ),
-              ),
-            ],
+            icon: const Icon(Icons.people_outline, size: 22),
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.conversations),
+            tooltip: l.get('conversations'),
           ),
         ],
       ),
@@ -1214,6 +1179,13 @@ class _ChatPageState extends State<ChatPage> {
                 SnackBar(
                   content: Text(l.get('block_success')),
                   backgroundColor: AppTheme.successColor,
+                  action: SnackBarAction(
+                    label: l.get('blocked_users'),
+                    textColor: Colors.white,
+                    onPressed: () {
+                      Navigator.pushNamed(context, AppRoutes.blockedUsers);
+                    },
+                  ),
                 ),
               );
             },
@@ -1247,6 +1219,7 @@ class _ChatPageState extends State<ChatPage> {
       userId: msg.userId,
       nickname: msg.nickname,
       avatar: msg.avatar,
+      userCode: msg.userCode,
     );
   }
 

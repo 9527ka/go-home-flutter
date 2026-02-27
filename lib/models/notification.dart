@@ -2,7 +2,7 @@
 class NotificationModel {
   final int id;
   final int userId;
-  final int type;        // 1=线索回复 2=审核通过 3=审核驳回 4=举报处理 5=系统通知
+  final int type;        // 1=线索回复 2=审核通过 3=审核驳回 4=举报处理 5=系统通知 6=举报违规
   final String title;
   final String content;
   final int? postId;     // 关联的启事ID
@@ -43,6 +43,7 @@ class NotificationModel {
       case 3: return '审核驳回';
       case 4: return '举报处理';
       case 5: return '系统通知';
+      case 6: return '举报违规';
       default: return '通知';
     }
   }

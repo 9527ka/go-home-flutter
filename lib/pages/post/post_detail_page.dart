@@ -3,7 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../config/api.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -199,7 +198,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         itemCount: images.length,
         itemBuilder: (_, index) {
           return CachedNetworkImage(
-            imageUrl: '${images[index].imageUrl}',
+            imageUrl: images[index].imageUrl,
             fit: BoxFit.cover,
             placeholder: (_, __) => Container(color: Colors.grey[200]),
             errorWidget: (_, __, ___) => Container(
@@ -246,6 +245,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       case 2: return AppTheme.primaryColor;
       case 3: return AppTheme.textHint;
       case 4: return AppTheme.dangerColor;
+      case 5: return AppTheme.dangerColor; // 举报屏蔽
       default: return AppTheme.textHint;
     }
   }
@@ -369,10 +369,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   void _callPhone() async {
-    if (_post?.contactPhone == null) return;
-    final uri = Uri.parse('tel:${_post!.contactPhone}');
-    if (await canLaunchUrl(uri)) {
+    final phone = _post?.contactPhone;
+    if (phone == null || phone.isEmpty) return;
+    final uri = Uri.parse('tel:$phone');
+    try {
       await launchUrl(uri);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.get('call_failed'))),
+        );
+      }
     }
   }
 

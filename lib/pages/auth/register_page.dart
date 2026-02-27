@@ -5,6 +5,7 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/validators.dart';
+import '../../widgets/eula_dialog.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -19,6 +20,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _obscurePassword = true;
+  bool _agreeTerms = true; // 默认勾选协议
   int _accountType = 1; // 1=手机号 2=邮箱
 
   @override
@@ -30,6 +32,16 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
+    if (!_agreeTerms) {
+      final l = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l.get('agree_terms_required')),
+          backgroundColor: AppTheme.warningColor,
+        ),
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<AuthProvider>();
@@ -143,12 +155,52 @@ class _RegisterPageState extends State<RegisterPage> {
                 },
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 20),
 
-              // 用户协议提示
-              Text(
-                l.get('agree_terms'),
-                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              // 用户协议勾选
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Checkbox(
+                      value: _agreeTerms,
+                      onChanged: (v) => setState(() => _agreeTerms = v ?? true),
+                      activeColor: AppTheme.primaryColor,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _agreeTerms = !_agreeTerms),
+                      child: Text.rich(
+                        TextSpan(
+                          text: l.get('agree_terms_prefix'),
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          children: [
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: GestureDetector(
+                                onTap: () => EulaDialog.show(context),
+                                child: Text(
+                                  l.get('eula_link_text'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.primaryColor,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 16),

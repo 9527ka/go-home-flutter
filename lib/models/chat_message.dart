@@ -9,6 +9,7 @@ enum ChatMsgType {
 class ChatMessageModel {
   final int? id;
   final int userId;
+  final String userCode;
   final String nickname;
   final String avatar;
   final ChatMsgType msgType;
@@ -21,6 +22,7 @@ class ChatMessageModel {
   ChatMessageModel({
     this.id,
     required this.userId,
+    this.userCode = '',
     required this.nickname,
     this.avatar = '',
     this.msgType = ChatMsgType.text,
@@ -39,6 +41,7 @@ class ChatMessageModel {
     return ChatMessageModel(
       id: json['id'],
       userId: json['user_id'] ?? user?['id'] ?? 0,
+      userCode: json['user_code'] ?? user?['user_code'] ?? '',
       nickname: json['nickname'] ?? user?['nickname'] ?? '',
       avatar: json['avatar'] ?? user?['avatar'] ?? '',
       msgType: _parseMsgType(json['msg_type']),

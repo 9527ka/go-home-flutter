@@ -5,6 +5,8 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/conversation_provider.dart';
+import '../../providers/friend_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../widgets/post_card.dart';
@@ -29,11 +31,24 @@ class _HomePageState extends State<HomePage> {
       if (postProvider.posts.isEmpty && !postProvider.isLoading) {
         postProvider.refresh();
       }
-      final chatProvider = context.read<ChatProvider>();
-      if (!chatProvider.isLoading) {
-        chatProvider.checkUnread();
+
+      // 仅登录用户才调用需要鉴权的接口（游客调用会触发 401）
+      final auth = context.read<AuthProvider>();
+      if (auth.isLoggedIn) {
+        final chatProvider = context.read<ChatProvider>();
+        if (!chatProvider.isLoading) {
+          chatProvider.checkUnread();
+        }
+        // 绑定 ConversationProvider 到 ChatProvider，实时接收私聊/群聊新消息
+        final conversationProvider = context.read<ConversationProvider>();
+        conversationProvider.bindChatProvider(chatProvider);
+        conversationProvider.loadConversations();
+        // 绑定 FriendProvider，实时接收好友请求通知
+        final friendProvider = context.read<FriendProvider>();
+        friendProvider.bindChatProvider(chatProvider);
+        friendProvider.fetchRequestCount();
+        context.read<NotificationProvider>().fetchUnreadCount();
       }
-      context.read<NotificationProvider>().fetchUnreadCount();
     });
     _scrollCtrl.addListener(() {
       if (_scrollCtrl.position.pixels >=
@@ -54,11 +69,12 @@ class _HomePageState extends State<HomePage> {
     final postProvider = context.watch<PostProvider>();
     final auth = context.watch<AuthProvider>();
     final chatProvider = context.watch<ChatProvider>();
+    final conversationProvider = context.watch<ConversationProvider>();
     final notificationProvider = context.watch<NotificationProvider>();
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      appBar: _buildAppBar(auth, chatProvider, notificationProvider),
+      appBar: _buildAppBar(auth, chatProvider, conversationProvider, notificationProvider),
       body: Column(
         children: [
           // 免责声明
@@ -107,7 +123,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   PreferredSizeWidget _buildAppBar(AuthProvider auth, ChatProvider chatProvider,
-      NotificationProvider notificationProvider) {
+      ConversationProvider conversationProvider, NotificationProvider notificationProvider) {
     final l = AppLocalizations.of(context)!;
     return AppBar(
       leading: Center(
@@ -194,8 +210,8 @@ class _HomePageState extends State<HomePage> {
             clipBehavior: Clip.none,
             children: [
               const Icon(Icons.chat_bubble_outline_rounded, size: 22),
-              // 未读红点
-              if (chatProvider.hasUnread)
+              // 未读红点（公共聊天室 + 私聊/群聊）
+              if (chatProvider.hasUnread || conversationProvider.hasUnread)
                 Positioned(
                   right: -3,
                   top: -3,
@@ -210,12 +226,18 @@ class _HomePageState extends State<HomePage> {
                 ),
             ],
           ),
-          tooltip: l.get('chat_room'),
+          tooltip: l.get('conversations'),
           onPressed: () async {
-            await Navigator.pushNamed(context, AppRoutes.chatRoom);
-            // 从聊天室返回后，重新检查未读状态
+            // 未登录用户需要先登录才能进入聊天室
+            if (!auth.isLoggedIn) {
+              Navigator.pushNamed(context, AppRoutes.login);
+              return;
+            }
+            await Navigator.pushNamed(context, AppRoutes.conversations);
+            // 从会话列表返回后，重新检查未读状态
             if (mounted) {
               chatProvider.checkUnread();
+              conversationProvider.loadConversations();
             }
           },
         ),

@@ -5,6 +5,7 @@ import '../../config/theme.dart';
 import '../../models/notification.dart';
 import '../../providers/notification_provider.dart';
 import '../../services/notification_service.dart';
+import '../../services/post_service.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -144,14 +145,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
   }
 
   /// 点击通知
-  void _onTapNotification(int index) {
+  void _onTapNotification(int index) async {
     final notification = _notifications[index];
 
     // 标记为已读
     _markRead(index);
 
-    // 如有关联启事，跳转详情
-    if (notification.postId != null && notification.postId! > 0) {
+    if (notification.postId == null || notification.postId! <= 0) return;
+
+    // 审核驳回 / 举报违规通知：跳转到编辑页面，让用户修改后重新提交
+    if (notification.type == 3 || notification.type == 6) {
+      final post = await PostService().getDetail(notification.postId!);
+      if (post != null && post.canEdit && mounted) {
+        Navigator.pushNamed(context, AppRoutes.postEdit, arguments: post);
+        return;
+      }
+    }
+
+    // 其他通知：跳转详情
+    if (mounted) {
       Navigator.pushNamed(
         context,
         AppRoutes.postDetail,
@@ -234,6 +246,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 4: // 举报处理
         typeColor = AppTheme.warningColor;
         typeIcon = Icons.flag_outlined;
+        break;
+      case 6: // 举报违规
+        typeColor = AppTheme.dangerColor;
+        typeIcon = Icons.gavel_outlined;
         break;
       default: // 系统通知
         typeColor = AppTheme.primaryColor;
@@ -350,7 +366,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         const Spacer(),
                         if (notification.postId != null && notification.postId! > 0)
                           Text(
-                            '查看详情 →',
+                            (notification.type == 3 || notification.type == 6) ? '去修改 →' : '查看详情 →',
                             style: TextStyle(fontSize: 12, color: typeColor, fontWeight: FontWeight.w500),
                           ),
                       ],

@@ -53,30 +53,38 @@ class _PostCreatePageState extends State<PostCreatePage> {
   }
 
   Future<void> _pickImages() async {
-    final images = await _imagePicker.pickMultiImage(
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 80,
-    );
+    try {
+      final images = await _imagePicker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 80,
+      );
 
-    if (images.isNotEmpty) {
-      setState(() {
-        final remaining = 9 - _selectedImages.length;
-        _selectedImages.addAll(images.take(remaining));
-      });
+      if (images.isNotEmpty) {
+        setState(() {
+          final remaining = 9 - _selectedImages.length;
+          _selectedImages.addAll(images.take(remaining));
+        });
+      }
+    } catch (e) {
+      if (mounted) _showError('无法打开相册');
     }
   }
 
   Future<void> _takePhoto() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 80,
-    );
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 80,
+      );
 
-    if (image != null && _selectedImages.length < 9) {
-      setState(() => _selectedImages.add(image));
+      if (image != null && _selectedImages.length < 9) {
+        setState(() => _selectedImages.add(image));
+      }
+    } catch (e) {
+      if (mounted) _showError('无法打开相机');
     }
   }
 

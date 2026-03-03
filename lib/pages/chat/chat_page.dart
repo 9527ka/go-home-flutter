@@ -591,13 +591,9 @@ class _ChatPageState extends State<ChatPage> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.people_outline, size: 22),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.conversations),
-            tooltip: l.get('conversations'),
-          ),
-        ],
+        // HIDDEN_FEATURE: 聊天室右上角 - 原有"会话列表"入口按钮，恢复时替换为原 actions 代码
+        // 原代码: actions: [ IconButton(icon: Icon(Icons.people_outline, size: 22), onPressed: () => Navigator.pushNamed(context, AppRoutes.conversations), tooltip: l.get('conversations')) ]
+        actions: const [],
       ),
       body: GestureDetector(
         onTap: () {

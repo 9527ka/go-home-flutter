@@ -51,7 +51,7 @@ class AppRoutes {
   static const String blockedUsers = '/blocked-users';
   static const String privateChat = '/private-chat';
 
-  // 好友
+  // HIDDEN_FEATURE: 好友相关路由（路由保留防崩溃，入口已隐藏）
   static const String friendListPage = '/friends';
   static const String friendRequests = '/friend-requests';
   static const String friendSearch = '/friend-search';

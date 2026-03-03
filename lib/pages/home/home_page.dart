@@ -233,11 +233,12 @@ class _HomePageState extends State<HomePage> {
               Navigator.pushNamed(context, AppRoutes.login);
               return;
             }
-            await Navigator.pushNamed(context, AppRoutes.conversations);
-            // 从会话列表返回后，重新检查未读状态
+            // HIDDEN_FEATURE: 会话列表 - 原逻辑进入 AppRoutes.conversations，现直接进入聊天室
+            // 恢复时改回: await Navigator.pushNamed(context, AppRoutes.conversations);
+            // 并恢复: conversationProvider.loadConversations();
+            await Navigator.pushNamed(context, AppRoutes.chatRoom);
             if (mounted) {
               chatProvider.checkUnread();
-              conversationProvider.loadConversations();
             }
           },
         ),

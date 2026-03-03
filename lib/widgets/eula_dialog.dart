@@ -35,7 +35,7 @@ class EulaDialog extends StatelessWidget {
       ),
       content: SizedBox(
         width: double.maxFinite,
-        height: 400,
+        height: MediaQuery.of(context).size.height * 0.5,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

@@ -383,7 +383,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
-  void _share() {
+  Future<void> _share() async {
     if (_post == null) return;
     // ⚠️ 儿童类分享时隐藏联系电话，引导通过平台联系
     final contactLine = _post!.isChild
@@ -393,7 +393,22 @@ class _PostDetailPageState extends State<PostDetailPage> {
         '走失地点：${_post!.locationText}\n'
         '$contactLine\n'
         '请帮忙转发扩散，谢谢！';
-    Share.share(text);
+    try {
+      // iPad 需要 sharePositionOrigin 定位弹出框
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(
+        text,
+        sharePositionOrigin: box != null
+            ? Rect.fromLTWH(box.size.width - 50, 0, 50, 50)
+            : null,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.get('share_failed'))),
+        );
+      }
+    }
   }
 
   void _showReport() {

@@ -5,7 +5,8 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/friend_provider.dart';
+// HIDDEN_FEATURE: 好友 - 恢复时取消注释
+// import '../../providers/friend_provider.dart';
 import '../../widgets/delete_account_dialog.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -17,7 +18,8 @@ class ProfilePage extends StatelessWidget {
     final user = auth.user;
     final l = AppLocalizations.of(context)!;
     final notificationProvider = context.watch<NotificationProvider>();
-    final friendProvider = context.watch<FriendProvider>();
+    // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+    // final friendProvider = context.watch<FriendProvider>();
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
@@ -181,20 +183,21 @@ class ProfilePage extends StatelessWidget {
                       notificationProvider.fetchUnreadCount();
                     },
                   ),
-                  const Divider(indent: 58, height: 0.5),
-                  _menuItem(
-                    context,
-                    icon: Icons.people_outline,
-                    iconColor: const Color(0xFF06B6D4),
-                    title: l.get('my_friends'),
-                    subtitle: l.get('my_friends_subtitle'),
-                    showBadge: friendProvider.hasNewRequests,
-                    onTap: () async {
-                      await Navigator.pushNamed(context, AppRoutes.friendListPage);
-                      friendProvider.loadFriends();
-                      friendProvider.fetchRequestCount();
-                    },
-                  ),
+                  // HIDDEN_FEATURE: 好友 - "我的好友"菜单项，恢复时取消注释下方代码块
+                  // const Divider(indent: 58, height: 0.5),
+                  // _menuItem(
+                  //   context,
+                  //   icon: Icons.people_outline,
+                  //   iconColor: const Color(0xFF06B6D4),
+                  //   title: l.get('my_friends'),
+                  //   subtitle: l.get('my_friends_subtitle'),
+                  //   showBadge: friendProvider.hasNewRequests,
+                  //   onTap: () async {
+                  //     await Navigator.pushNamed(context, AppRoutes.friendListPage);
+                  //     friendProvider.loadFriends();
+                  //     friendProvider.fetchRequestCount();
+                  //   },
+                  // ),
                 ],
               ),
             ),

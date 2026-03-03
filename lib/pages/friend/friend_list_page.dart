@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../config/routes.dart';
+// HIDDEN_FEATURE: 好友 - 恢复时取消注释
+// import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/friend.dart';
@@ -66,7 +67,8 @@ class _FriendListPageState extends State<FriendListPage> {
     final l = AppLocalizations.of(context)!;
     final friendProvider = context.watch<FriendProvider>();
     final friends = friendProvider.friends;
-    final hasNewRequests = friendProvider.hasNewRequests;
+    // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+    // final hasNewRequests = friendProvider.hasNewRequests;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
@@ -76,30 +78,8 @@ class _FriendListPageState extends State<FriendListPage> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.person_add_outlined, size: 22),
-                onPressed: () => Navigator.pushNamed(context, AppRoutes.friendRequests),
-              ),
-              if (hasNewRequests)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.dangerColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
+        // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+        actions: const [],
       ),
       body: friendProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -116,11 +96,12 @@ class _FriendListPageState extends State<FriendListPage> {
                     itemBuilder: (_, index) => _buildFriendItem(friends[index], l),
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.friendSearch),
-        backgroundColor: AppTheme.primaryColor,
-        child: const Icon(Icons.search, color: Colors.white),
-      ),
+      // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () => Navigator.pushNamed(context, AppRoutes.friendSearch),
+      //   backgroundColor: AppTheme.primaryColor,
+      //   child: const Icon(Icons.search, color: Colors.white),
+      // ),
     );
   }
 
@@ -248,18 +229,19 @@ class _FriendListPageState extends State<FriendListPage> {
             l.get('my_friends_subtitle'),
             style: const TextStyle(fontSize: 13, color: AppTheme.textHint),
           ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.friendSearch),
-            icon: const Icon(Icons.person_add_outlined, size: 18),
-            label: Text(l.get('add_friend')),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.primaryColor,
-              side: const BorderSide(color: AppTheme.primaryColor),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-            ),
-          ),
+          // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+          // const SizedBox(height: 24),
+          // OutlinedButton.icon(
+          //   onPressed: () => Navigator.pushNamed(context, AppRoutes.friendSearch),
+          //   icon: const Icon(Icons.person_add_outlined, size: 18),
+          //   label: Text(l.get('add_friend')),
+          //   style: OutlinedButton.styleFrom(
+          //     foregroundColor: AppTheme.primaryColor,
+          //     side: const BorderSide(color: AppTheme.primaryColor),
+          //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          //     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+          //   ),
+          // ),
         ],
       ),
     );

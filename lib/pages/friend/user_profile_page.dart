@@ -5,7 +5,8 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/chat_provider.dart';
-import '../../providers/friend_provider.dart';
+// HIDDEN_FEATURE: 好友 - 恢复时取消注释
+// import '../../providers/friend_provider.dart';
 
 /// User profile bottom sheet displayed when tapping a user's avatar in chat.
 class UserProfilePage extends StatefulWidget {
@@ -51,7 +52,8 @@ class UserProfilePage extends StatefulWidget {
 }
 
 class _UserProfilePageState extends State<UserProfilePage> {
-  bool _isSendingRequest = false;
+  // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+  // bool _isSendingRequest = false;
   bool _isBlocking = false;
 
   /// System avatar color and icon mapping
@@ -71,19 +73,17 @@ class _UserProfilePageState extends State<UserProfilePage> {
     '/system/avatars/avatar_10.svg': [Color(0xFFEAB308), Icons.face_6],
   };
 
-  Future<void> _handleAddFriend() async {
-    setState(() => _isSendingRequest = true);
-
-    final error = await context.read<FriendProvider>().sendRequest(
-          toId: widget.userId,
-        );
-
-    if (!mounted) return;
-    setState(() => _isSendingRequest = false);
-
-    final l = AppLocalizations.of(context)!;
-    Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
-  }
+  // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+  // Future<void> _handleAddFriend() async {
+  //   setState(() => _isSendingRequest = true);
+  //   final error = await context.read<FriendProvider>().sendRequest(
+  //         toId: widget.userId,
+  //       );
+  //   if (!mounted) return;
+  //   setState(() => _isSendingRequest = false);
+  //   final l = AppLocalizations.of(context)!;
+  //   Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
+  // }
 
   Future<void> _handleToggleBlock() async {
     final chatProvider = context.read<ChatProvider>();
@@ -135,9 +135,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final friendProvider = context.watch<FriendProvider>();
+    // HIDDEN_FEATURE: 好友 - 恢复时取消注释
+    // final friendProvider = context.watch<FriendProvider>();
     final chatProvider = context.watch<ChatProvider>();
-    final isFriend = friendProvider.isFriend(widget.userId);
     final isBlocked = chatProvider.isUserBlocked(widget.userId);
 
     return SafeArea(
@@ -198,25 +198,15 @@ class _UserProfilePageState extends State<UserProfilePage> {
             // Action buttons
             Row(
               children: [
-                // Send Message / Add Friend
+                // HIDDEN_FEATURE: 好友 - 原逻辑：非好友显示"添加好友"，好友显示"发消息"；现统一显示"发消息"
                 Expanded(
-                  child: isFriend
-                      ? _buildActionButton(
-                          label: l.get('send_message'),
-                          icon: Icons.chat_bubble_outline_rounded,
-                          color: AppTheme.primaryColor,
-                          isLoading: false,
-                          onPressed: _handleSendMessage,
-                        )
-                      : _buildActionButton(
-                          label: l.get('add_friend'),
-                          icon: Icons.person_add_outlined,
-                          color: AppTheme.primaryColor,
-                          isLoading: _isSendingRequest,
-                          onPressed: _isSendingRequest
-                              ? null
-                              : _handleAddFriend,
-                        ),
+                  child: _buildActionButton(
+                    label: l.get('send_message'),
+                    icon: Icons.chat_bubble_outline_rounded,
+                    color: AppTheme.primaryColor,
+                    isLoading: false,
+                    onPressed: _handleSendMessage,
+                  ),
                 ),
                 const SizedBox(width: 10),
 

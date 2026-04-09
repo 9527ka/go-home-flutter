@@ -80,6 +80,15 @@ class FriendService {
     return [];
   }
 
+  /// 修改好友备注
+  Future<bool> updateRemark(int friendId, String remark) async {
+    final res = await _http.post(ApiConfig.friendRemark, data: {
+      'friend_id': friendId,
+      'remark': remark,
+    });
+    return res['code'] == 0;
+  }
+
   /// 获取待处理请求数量
   Future<int> getRequestCount() async {
     final res = await _http.get(ApiConfig.friendRequestCount);

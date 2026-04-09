@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/api_response.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
+import '../utils/storage.dart';
 
 class PostProvider extends ChangeNotifier {
   final PostService _postService = PostService();
@@ -13,11 +15,26 @@ class PostProvider extends ChangeNotifier {
   int _currentPage = 1;
 
   // 筛选条件
-  // filterCategory: null=全部, 2=成年人, 3=儿童, -1=其它(宠物+其它物品)
+  // filterCategory: null=全部, 2=亲人, 1=宠物, 4=物品
   int? _filterCategory;
   String? _filterCity;
   String? _filterKeyword;
   int? _filterDays;
+
+  /// 从本地缓存加载文章列表（用于 app 启动时瞬间显示）
+  Future<void> loadFromCache() async {
+    if (_posts.isNotEmpty) return;
+    try {
+      final cached = await StorageUtil.getPostsCache();
+      if (cached != null && cached.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(cached);
+        _posts = list.map((e) => PostModel.fromJson(e as Map<String, dynamic>)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      // 缓存损坏，忽略
+    }
+  }
 
   List<PostModel> get posts => _posts;
   bool get isLoading => _isLoading;
@@ -25,7 +42,7 @@ class PostProvider extends ChangeNotifier {
   int? get filterCategory => _filterCategory;
 
   /// 设置分类筛选
-  /// null=全部, 2=成年人, 3=儿童, -1=其它(宠物+其它物品)
+  /// null=全部, 2=亲人, 1=宠物, 4=物品
   void setCategory(int? category) {
     _filterCategory = category;
     refresh();
@@ -88,6 +105,11 @@ class PostProvider extends ChangeNotifier {
 
       if (isRefresh) {
         _posts = pageData.list;
+        // 仅缓存无筛选条件的首页数据
+        if (_filterCategory == null && _filterCity == null &&
+            _filterKeyword == null && _filterDays == null) {
+          _saveCacheAsync();
+        }
       } else {
         _posts.addAll(pageData.list);
       }
@@ -99,6 +121,15 @@ class PostProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  void _saveCacheAsync() {
+    try {
+      final jsonStr = jsonEncode(_posts.map((p) => p.toJson()).toList());
+      StorageUtil.savePostsCache(jsonStr);
+    } catch (e) {
+      // 忽略缓存保存错误
     }
   }
 }

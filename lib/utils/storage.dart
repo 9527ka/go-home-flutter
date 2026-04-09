@@ -126,6 +126,42 @@ class StorageUtil {
     await saveBlockedUsers(list);
   }
 
+  // ---- Posts Cache ----
+  static const String _postsCacheKey = 'go_home_posts_cache';
+
+  static Future<void> savePostsCache(String jsonStr) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_postsCacheKey, jsonStr);
+  }
+
+  static Future<String?> getPostsCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_postsCacheKey);
+  }
+
+  static Future<void> clearPostsCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_postsCacheKey);
+  }
+
+  // ---- Chat Messages Cache ----
+  static const String _chatCacheKey = 'go_home_chat_cache';
+
+  static Future<void> saveChatCache(String jsonStr) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_chatCacheKey, jsonStr);
+  }
+
+  static Future<String?> getChatCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_chatCacheKey);
+  }
+
+  static Future<void> clearChatCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_chatCacheKey);
+  }
+
   // ---- 是否已登录 ----
 
   static Future<bool> isLoggedIn() async {

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/api.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/http_client.dart';
 import '../../services/upload_service.dart';
 import '../../utils/validators.dart';
+import '../../widgets/ai_banner.dart';
 
 class ClueSubmitPage extends StatefulWidget {
   final int postId;
@@ -62,8 +64,8 @@ class _ClueSubmitPageState extends State<ClueSubmitPage> {
 
       if (res['code'] == 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('线索提交成功！感谢您的帮助！'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.get('clue_submit_success')),
             backgroundColor: AppTheme.successColor,
           ),
         );
@@ -119,6 +121,15 @@ class _ClueSubmitPageState extends State<ClueSubmitPage> {
                 '为「${widget.postName}」提供线索',
                 style: TextStyle(color: AppTheme.primaryColor),
               ),
+            ),
+
+            const SizedBox(height: 12),
+
+            AiBanner(
+              style: AiBannerStyle.compact,
+              title: '',
+              subtitle: AppLocalizations.of(context)!.get('ai_clue_hint'),
+              icon: Icons.tips_and_updates,
             ),
 
             const SizedBox(height: 20),

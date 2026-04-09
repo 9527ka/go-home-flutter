@@ -107,7 +107,7 @@ def draw_phone_frame(img, draw, cx, y, phone_w, phone_h, radius, scale):
     return x, y
 
 def draw_post_card(draw, x, y, w, scale, title, category, location, time_str, status, cat_color):
-    """绘制一个寻人启事卡片"""
+    """绘制一个寻亲启事卡片"""
     h = int(200 * scale)
     # 卡片背景
     draw_rounded_rect(draw, (x, y, x+w, y+h), int(16*scale), hex_to_rgb(COLORS["card_bg"]))
@@ -167,7 +167,7 @@ def draw_bottom_tab(draw, x, y, w, scale, active_index=0):
         draw.text((tx - int(16*scale), y + int(48*scale)), label, fill=color, font=label_font)
 
 
-# ========== 截图 1: 首页 - 寻人启事列表 ==========
+# ========== 截图 1: 首页 - 寻亲启事列表 ==========
 def generate_screenshot_1(width, height, size_name):
     img = Image.new("RGBA", (width, height), (255,255,255,255))
     draw = ImageDraw.Draw(img)
@@ -180,7 +180,7 @@ def generate_screenshot_1(width, height, size_name):
     title_font = get_font(int(72*scale))
     subtitle_font = get_font(int(36*scale))
 
-    title = "发布寻人启事"
+    title = "发布寻亲启事"
     sub = "帮助走失的亲人找到回家的路"
     tw = draw.textlength(title, font=title_font)
     sw = draw.textlength(sub, font=subtitle_font)
@@ -205,7 +205,7 @@ def generate_screenshot_1(width, height, size_name):
 
     # 分类标签
     cat_y = nav_y + int(70*scale)
-    cats = ["全部", "成年人", "儿童", "宠物", "物品"]
+    cats = ["全部", "亲人", "儿童", "宠物", "物品"]
     cat_font = get_font(int(26*scale))
     cx = px + int(20*scale)
     for i, cat in enumerate(cats):
@@ -224,7 +224,7 @@ def generate_screenshot_1(width, height, size_name):
     card_margin = int(16*scale)
     card_w = phone_w - 2*card_margin
     cards_data = [
-        ("李奶奶 · 女 · 78岁", "成年人", "北京市海淀区", "2025-07-10", "寻找中", COLORS["category_elder"]),
+        ("李奶奶 · 女 · 78岁", "亲人", "北京市海淀区", "2025-07-10", "寻找中", COLORS["category_elder"]),
         ("小明 · 男 · 6岁", "儿童", "上海市浦东新区", "2025-07-09", "寻找中", COLORS["category_child"]),
         ("豆豆 · 金毛犬", "宠物", "广州市天河区", "2025-07-08", "已找到", COLORS["category_pet"]),
     ]
@@ -390,7 +390,7 @@ def generate_screenshot_3(width, height, size_name):
     draw.text((form_x, form_y), "选择分类", fill=hex_to_rgb(COLORS["text_dark"]), font=label_font)
     form_y += int(44*scale)
 
-    cats = [("🧓 成年人", True), ("👶 儿童", False), ("🐕 宠物", False), ("📦 物品", False)]
+    cats = [("🧓 亲人", True), ("👶 儿童", False), ("🐕 宠物", False), ("📦 物品", False)]
     cx = form_x
     for cat_text, active in cats:
         cw = int(130*scale)
@@ -479,12 +479,12 @@ def generate_screenshot_4(width, height, size_name):
     time_font = get_font(int(18*scale))
 
     messages = [
-        ("other", "志愿者小王", "大家好！我在海淀区中关村附近看到一位走失成年人，穿蓝色外套", "14:32"),
+        ("other", "志愿者小王", "大家好！我在海淀区中关村附近看到一位走失亲人，穿蓝色外套", "14:32"),
         ("self", "我", "是不是白头发的奶奶？我刚看到那条启事", "14:33"),
         ("other", "热心市民", "我在附近，可以去确认一下", "14:34"),
         ("other", "志愿者小王", "好的！她现在在中关村地铁站 B 口附近", "14:35"),
         ("self", "我", "太好了！我已经联系了发布者的家人", "14:36"),
-        ("other", "热心市民", "🎉 找到了！成年人家属已经赶到", "14:40"),
+        ("other", "热心市民", "🎉 找到了！亲人家属已经赶到", "14:40"),
     ]
 
     for msg_type, name, text, time_str in messages:

@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import '../utils/url_helper.dart';
 
 /// 通用头像组件 — 支持系统头像、网络图片、字母占位
 /// 系统头像兼容完整 URL 和相对路径格式
@@ -69,16 +71,20 @@ class AvatarWidget extends StatelessWidget {
 
     // Network image avatar
     if (avatarPath.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Image.network(
-          avatarPath,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _letterAvatar(initial, radius),
-        ),
-      );
+      final absUrl = UrlHelper.ensureAbsolute(avatarPath);
+      if (UrlHelper.isValidNetworkUrl(absUrl)) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: CachedNetworkImage(
+            imageUrl: absUrl,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => _letterAvatar(initial, radius),
+            errorWidget: (_, __, ___) => _letterAvatar(initial, radius),
+          ),
+        );
+      }
     }
 
     // Default letter placeholder

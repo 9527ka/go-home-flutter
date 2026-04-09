@@ -1,11 +1,13 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/post.dart';
 import '../../services/post_service.dart';
 import '../../services/upload_service.dart';
-import '../../utils/validators.dart';
+import '../../widgets/post/image_picker_section.dart';
+import '../../widgets/post/post_form_fields.dart';
+import '../../widgets/post/visibility_selector.dart';
 
 class PostEditPage extends StatefulWidget {
   final PostModel post;
@@ -22,23 +24,18 @@ class _PostEditPageState extends State<PostEditPage> {
   final _imagePicker = ImagePicker();
 
   late int _category;
-  late int _gender;
   final _nameCtrl = TextEditingController();
-  final _ageCtrl = TextEditingController();
   final _speciesCtrl = TextEditingController();
   final _appearanceCtrl = TextEditingController();
-  final _descriptionCtrl = TextEditingController();
   final _lostCityCtrl = TextEditingController();
-  final _lostDistrictCtrl = TextEditingController();
-  final _lostAddressCtrl = TextEditingController();
-  final _contactNameCtrl = TextEditingController();
-  final _contactPhoneCtrl = TextEditingController();
 
   late DateTime _lostAt;
   List<XFile> _newImages = [];
   List<String> _existingImageUrls = []; // 已有的服务端图片URL
   bool _imagesChanged = false;
   bool _isSubmitting = false;
+  bool _privacyAgreed = false;
+  bool _isPublic = true;
 
   @override
   void initState() {
@@ -49,33 +46,25 @@ class _PostEditPageState extends State<PostEditPage> {
   void _prefillForm() {
     final p = widget.post;
     _category = p.category;
-    _gender = p.gender;
     _nameCtrl.text = p.name;
-    _ageCtrl.text = p.age;
     _speciesCtrl.text = p.species;
-    _appearanceCtrl.text = p.appearance;
-    _descriptionCtrl.text = p.description;
-    _lostCityCtrl.text = p.lostCity;
-    _lostDistrictCtrl.text = p.lostDistrict;
-    _lostAddressCtrl.text = p.lostAddress;
-    _contactNameCtrl.text = p.contactName;
-    _contactPhoneCtrl.text = p.contactPhone;
+    // 合并 appearance + description 到一个字段
+    _appearanceCtrl.text = p.description.isNotEmpty
+        ? '${p.appearance}\n${p.description}'
+        : p.appearance;
+    // 合并城市+地址到一个字段
+    _lostCityCtrl.text = p.locationText;
     _lostAt = DateTime.tryParse(p.lostAt) ?? DateTime.now();
     _existingImageUrls = p.images.map((img) => img.imageUrl).toList();
+    _isPublic = p.visibility != 2;
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _ageCtrl.dispose();
     _speciesCtrl.dispose();
     _appearanceCtrl.dispose();
-    _descriptionCtrl.dispose();
     _lostCityCtrl.dispose();
-    _lostDistrictCtrl.dispose();
-    _lostAddressCtrl.dispose();
-    _contactNameCtrl.dispose();
-    _contactPhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -139,12 +128,9 @@ class _PostEditPageState extends State<PostEditPage> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_category == 3) {
-      final addrError = Validators.childAddress(_lostAddressCtrl.text);
-      if (addrError != null) {
-        _showError(addrError);
-        return;
-      }
+    if (!_privacyAgreed) {
+      _showError(AppLocalizations.of(context)!.get('privacy_consent_required'));
+      return;
     }
 
     setState(() => _isSubmitting = true);
@@ -163,18 +149,15 @@ class _PostEditPageState extends State<PostEditPage> {
       final res = await _postService.update(
         id: widget.post.id,
         name: _nameCtrl.text.trim(),
-        gender: _gender,
-        age: _ageCtrl.text.trim(),
         species: _speciesCtrl.text.trim(),
         appearance: _appearanceCtrl.text.trim(),
-        description: _descriptionCtrl.text.trim(),
+        description: '',
         lostAt: _lostAt.toIso8601String(),
         lostCity: _lostCityCtrl.text.trim(),
-        lostDistrict: _lostDistrictCtrl.text.trim(),
-        lostAddress: _lostAddressCtrl.text.trim(),
-        contactName: _contactNameCtrl.text.trim(),
-        contactPhone: _contactPhoneCtrl.text.trim(),
+        lostDistrict: '',
+        lostAddress: '',
         images: finalImages,
+        visibility: _isPublic ? 1 : 2,
       );
 
       if (!mounted) return;
@@ -293,141 +276,25 @@ class _PostEditPageState extends State<PostEditPage> {
                     ),
                   ),
 
-                  const SizedBox(height: 20),
-
-                  // 基本信息
-                  const Text('基本信息', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-
-                  TextFormField(
-                    controller: _nameCtrl,
-                    decoration: InputDecoration(
-                      labelText: _category == 1 ? '宠物名字' : _category == 4 ? '物品名称' : '姓名/称呼',
-                    ),
-                    validator: (v) => Validators.required(v, '名字'),
-                  ),
-
                   const SizedBox(height: 12),
 
-                  if (_category != 4) ...[
-                    Row(
-                      children: [
-                        const Text('性别：'),
-                        Radio<int>(value: 0, groupValue: _gender, onChanged: (v) => setState(() => _gender = v!)),
-                        const Text('未知'),
-                        Radio<int>(value: 1, groupValue: _gender, onChanged: (v) => setState(() => _gender = v!)),
-                        Text(_category == 1 ? '公' : '男'),
-                        Radio<int>(value: 2, groupValue: _gender, onChanged: (v) => setState(() => _gender = v!)),
-                        Text(_category == 1 ? '母' : '女'),
-                      ],
-                    ),
-                  ],
-
-                  if (_category != 4)
-                    TextFormField(
-                      controller: _ageCtrl,
-                      decoration: const InputDecoration(labelText: '年龄'),
-                    ),
-
-                  if (_category == 1) ...[
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _speciesCtrl,
-                      decoration: const InputDecoration(labelText: '品种'),
-                    ),
-                  ],
-
-                  if (_category == 4) ...[
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _speciesCtrl,
-                      decoration: const InputDecoration(labelText: '物品类型', hintText: '如：钱包、手机、钥匙等'),
-                    ),
-                  ],
-
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _appearanceCtrl,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: _category == 4 ? '外观描述 *' : '体貌特征 *',
-                      hintText: _category == 4 ? '请详细描述物品外观（至少10个字）' : '请详细描述体貌特征（至少10个字）',
-                    ),
-                    validator: (v) => Validators.minLength(v, 10, _category == 4 ? '外观描述' : '体貌特征'),
-                  ),
-
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _descriptionCtrl,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: '补充说明',
-                      hintText: _category == 4 ? '丢失经过等其他信息' : '走失经过等其他信息',
-                    ),
+                  // ========== 可见性选项 ==========
+                  VisibilitySelector(
+                    isPublic: _isPublic,
+                    onChanged: (v) => setState(() => _isPublic = v),
                   ),
 
                   const SizedBox(height: 20),
 
-                  // 走失/丢失信息
-                  Text(_category == 4 ? '丢失信息' : '走失信息', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(_category == 4 ? '丢失时间' : '走失时间'),
-                    subtitle: Text(
-                      '${_lostAt.year}-${_lostAt.month.toString().padLeft(2, '0')}-${_lostAt.day.toString().padLeft(2, '0')} '
-                      '${_lostAt.hour.toString().padLeft(2, '0')}:${_lostAt.minute.toString().padLeft(2, '0')}',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: _selectDate,
-                  ),
-
-                  TextFormField(
-                    controller: _lostCityCtrl,
-                    decoration: const InputDecoration(labelText: '城市 *'),
-                    validator: (v) => Validators.required(v, '城市'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _lostAddressCtrl,
-                    decoration: InputDecoration(
-                      labelText: '详细地址',
-                      hintText: _category == 3 ? '⚠️ 为保护儿童安全，请勿填写精确门牌号' : '街道、小区、标志性建筑等',
-                    ),
-                    validator: _category == 3 ? Validators.childAddress : null,
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 联系方式（同一行）
-                  const Text('联系方式', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
-                          controller: _contactNameCtrl,
-                          decoration: const InputDecoration(labelText: '联系人'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 3,
-                        child: TextFormField(
-                          controller: _contactPhoneCtrl,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            labelText: '联系电话 *',
-                            hintText: _category == 3 ? '建议使用固话或工作号码' : null,
-                          ),
-                          validator: Validators.contactPhone,
-                        ),
-                      ),
-                    ],
+                  // ========== 表单字段 ==========
+                  PostFormFields(
+                    category: _category,
+                    nameCtrl: _nameCtrl,
+                    speciesCtrl: _speciesCtrl,
+                    appearanceCtrl: _appearanceCtrl,
+                    lostCityCtrl: _lostCityCtrl,
+                    lostAt: _lostAt,
+                    onSelectDate: _selectDate,
                   ),
 
                   const SizedBox(height: 20),
@@ -435,7 +302,29 @@ class _PostEditPageState extends State<PostEditPage> {
                   // 图片
                   const Text('照片 (最多9张)', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  _buildImagePicker(),
+                  ImagePickerSection(
+                    newImages: _newImages,
+                    existingImageUrls: _existingImageUrls,
+                    onPickImages: _pickImages,
+                    onTakePhoto: _takePhoto,
+                    onRemoveNewImage: (index) {
+                      setState(() {
+                        _newImages.removeAt(index);
+                        _imagesChanged = true;
+                      });
+                    },
+                    onRemoveExistingImage: (index) {
+                      setState(() {
+                        _existingImageUrls.removeAt(index);
+                        _imagesChanged = true;
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ========== 隐私声明同意 ==========
+                  _buildPrivacyConsent(),
 
                   const SizedBox(height: 16),
                 ],
@@ -486,117 +375,65 @@ class _PostEditPageState extends State<PostEditPage> {
     );
   }
 
-  Widget _buildImagePreview(XFile xFile) {
-    return FutureBuilder<Uint8List>(
-      future: xFile.readAsBytes(),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return Image.memory(snapshot.data!, width: 80, height: 80, fit: BoxFit.cover);
-        }
-        return const SizedBox(width: 80, height: 80, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
-      },
-    );
-  }
-
-  Widget _buildImagePicker() {
-    final totalCount = _existingImageUrls.length + _newImages.length;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        // 已有的服务端图片
-        ..._existingImageUrls.asMap().entries.map((entry) {
-          return Stack(
+  Widget _buildPrivacyConsent() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.primaryColor.withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  entry.value,
-                  width: 80, height: 80, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 80, height: 80,
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.broken_image, size: 24),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0, right: 0,
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _existingImageUrls.removeAt(entry.key);
-                      _imagesChanged = true;
-                    });
-                  },
-                  child: Container(
-                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                    child: const Icon(Icons.close, size: 16, color: Colors.white),
-                  ),
+              Icon(Icons.shield_outlined, size: 16, color: AppTheme.primaryColor),
+              const SizedBox(width: 6),
+              Text(
+                AppLocalizations.of(context)!.get('privacy_consent_title'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primaryColor,
                 ),
               ),
             ],
-          );
-        }),
-        // 新选择的图片
-        ..._newImages.asMap().entries.map((entry) {
-          return Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _buildImagePreview(entry.value),
-              ),
-              Positioned(
-                top: 0, right: 0,
-                child: GestureDetector(
-                  onTap: () => setState(() {
-                    _newImages.removeAt(entry.key);
-                    _imagesChanged = true;
-                  }),
-                  child: Container(
-                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                    child: const Icon(Icons.close, size: 16, color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          );
-        }),
-        if (totalCount < 9)
-          GestureDetector(
-            onTap: _showImageSourceDialog,
-            child: Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.add_photo_alternate, color: AppTheme.textHint),
-            ),
           ),
-      ],
-    );
-  }
-
-  void _showImageSourceDialog() {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('拍照'),
-              onTap: () { Navigator.pop(ctx); _takePhoto(); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('从相册选择'),
-              onTap: () { Navigator.pop(ctx); _pickImages(); },
-            ),
-          ],
-        ),
+          const SizedBox(height: 8),
+          Text(
+            AppLocalizations.of(context)!.get('privacy_consent_text'),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: _privacyAgreed,
+                  onChanged: (v) => setState(() => _privacyAgreed = v ?? false),
+                  activeColor: AppTheme.primaryColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _privacyAgreed = !_privacyAgreed),
+                  child: Text(
+                    AppLocalizations.of(context)!.get('privacy_consent_checkbox'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _privacyAgreed ? AppTheme.textPrimary : AppTheme.textSecondary,
+                      fontWeight: _privacyAgreed ? FontWeight.w500 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

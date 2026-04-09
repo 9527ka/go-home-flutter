@@ -253,6 +253,8 @@ class AuthProvider extends ChangeNotifier {
   /// 退出登录
   Future<void> logout() async {
     await _authService.logout();
+    await StorageUtil.clearPostsCache();
+    await StorageUtil.clearChatCache();
     _user = null;
     _isLoggedIn = false;
     notifyListeners();

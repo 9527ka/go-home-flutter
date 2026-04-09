@@ -1,7 +1,7 @@
 name: go_home
-description: 回家了么 - 寻人平台客户端
+description: 回家了么 - 寻亲平台客户端
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.3+4
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -23,6 +23,9 @@ dependencies:
 
   # 图片选择
   image_picker: ^1.0.0
+
+  # 图片剪裁
+  image_cropper: ^8.0.0
 
   # 图片压缩
   flutter_image_compress: ^2.1.0
@@ -72,6 +75,10 @@ dependencies:
   permission_handler: ^11.0.0
 
   audio_session: ^0.1.19
+
+dependency_overrides:
+  # 修复 objective_c 9.3.0 在模拟器上 native assets 加载失败的问题
+  path_provider_foundation: 2.4.0
 
 dev_dependencies:
   flutter_test:

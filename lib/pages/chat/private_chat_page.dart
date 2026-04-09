@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
+import 'dart:convert';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -12,31 +13,49 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../config/currency.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/app_config_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
 import '../../services/chat_service.dart';
 import '../../services/pm_service.dart';
+import '../../services/wallet_service.dart';
+import '../../utils/url_helper.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/chat/voice_record_overlay.dart';
+import '../../widgets/chat/date_separator.dart';
+import '../../widgets/chat/media_panel.dart';
+import '../../widgets/chat/chat_input_bar.dart';
+import '../../widgets/chat/message_bubble.dart';
+import '../../widgets/chat/bubble_content.dart';
+import '../../widgets/chat/message_actions.dart';
 import '../friend/user_profile_page.dart';
+import 'private_chat_detail_page.dart';
+import '../wallet/red_packet_send_dialog.dart';
+import '../wallet/red_packet_open_dialog.dart';
 
 /// 私聊聊天页面 — 与公共聊天室功能一致
 /// [friendId] 好友用户 ID
 /// [friendName] 好友昵称
 /// [friendAvatar] 好友头像
+/// [friendUserCode] 好友用户编号
 class PrivateChatPage extends StatefulWidget {
   final int friendId;
   final String friendName;
   final String friendAvatar;
+  final String friendUserCode;
 
   const PrivateChatPage({
     super.key,
     required this.friendId,
     required this.friendName,
     this.friendAvatar = '',
+    this.friendUserCode = '',
   });
 
   @override
@@ -53,6 +72,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   final _audioPlayer = AudioPlayer();
 
   final List<ChatMessageModel> _messages = [];
+  final Set<int> _messageIds = {}; // 消息去重
   bool _needsAutoScroll = true;
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -61,6 +81,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   bool _showMediaPanel = false;
   bool _isUploading = false;
   bool _hasInputText = false;
+  final Set<int> _claimingRedPacketIds = {};
+  final Set<int> _claimedRedPacketIds = {};
 
   // 语音模式 & 录音状态
   bool _voiceMode = false;
@@ -68,7 +90,13 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   bool _cancellingVoice = false;
   int _recordDuration = 0;
   Timer? _recordTimer;
-  String? _recordPath;
+  Timer? _amplitudeTimer; // 振幅采集定时器
+  List<double> _amplitudes = []; // 声波振幅历史（用于绘制波形）
+  double _currentAmplitude = 0; // 当前振幅 0~1
+  OverlayEntry? _recordOverlay; // 录音浮层
+
+  // 语音上传占位
+  int? _uploadingVoiceDuration; // 非空表示正在上传语音，值为时长
 
   // 语音播放
   int? _playingMsgId;
@@ -76,6 +104,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   @override
   void initState() {
     super.initState();
+    // 确保 WebSocket 已连接（引用计数，与公共聊天室共享）
+    context.read<ChatProvider>().onPageEnter();
+    // 标记当前活跃会话（防止未读数递增）
+    final convProvider = context.read<ConversationProvider>();
+    convProvider.setCurrentUserId(context.read<AuthProvider>().user?.id);
+    convProvider.setActiveConversation(widget.friendId, 'private');
     _loadHistory();
     _registerWsHandler();
 
@@ -96,12 +130,22 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   @override
   void dispose() {
+    _removeRecordOverlay();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _recordTimer?.cancel();
+    _amplitudeTimer?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _unregisterWsHandler();
+    // 清除活跃会话标记
+    try {
+      context.read<ConversationProvider>().clearActiveConversation();
+    } catch (_) {}
+    // 释放 WebSocket 引用计数
+    try {
+      context.read<ChatProvider>().onPageLeave();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -119,13 +163,39 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   void _onPrivateMessage(Map<String, dynamic> data) {
-    // 只处理来自当前好友的消息
     final fromId = data['from_id'] ?? data['user_id'] ?? 0;
-    if (fromId != widget.friendId) return;
+    final toId = data['to_id'] ?? 0;
+    final currentUserId = context.read<AuthProvider>().user?.id;
+
+    // 只处理与当前好友相关的消息（对方发给我 或 我发给对方）
+    final bool isFromFriend = fromId == widget.friendId;
+    final bool isSentToFriend = currentUserId != null && fromId == currentUserId && toId == widget.friendId;
+    if (!isFromFriend && !isSentToFriend) return;
 
     final msg = ChatMessageModel.fromJson(data);
+
+    // 去重：防止与乐观本地消息或历史加载重复
+    if (msg.id != null && _messageIds.contains(msg.id)) return;
+
+    // 收到好友消息时，立即标记已读（返回会话列表不再显示红点）
+    if (isFromFriend) {
+      context.read<ConversationProvider>().markRead(widget.friendId, 'private');
+    }
+
     if (mounted) {
       setState(() {
+        if (msg.id != null) _messageIds.add(msg.id!);
+        // 自己发的消息已经乐观添加过（无 id），用服务端回传替换
+        if (isSentToFriend && msg.id != null) {
+          // 尝试找到最后一条无 id 的本地乐观消息并替换
+          final localIdx = _messages.lastIndexWhere(
+            (m) => m.id == null && m.userId == currentUserId && m.content == msg.content,
+          );
+          if (localIdx >= 0) {
+            _messages[localIdx] = msg;
+            return;
+          }
+        }
         _messages.add(msg);
       });
       _scrollToBottomIfNeeded();
@@ -135,14 +205,30 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   Future<void> _loadHistory() async {
     setState(() => _isLoading = true);
     try {
+      // 读取清空时间戳，过滤掉清空之前的消息
+      final prefs = await SharedPreferences.getInstance();
+      final clearedAtStr = prefs.getString('chat_cleared_at_${widget.friendId}');
+      DateTime? clearedAt;
+      if (clearedAtStr != null) {
+        clearedAt = DateTime.tryParse(clearedAtStr);
+      }
+
       final data = await _pmService.getHistory(friendId: widget.friendId, limit: 50);
       final list = data['list'] as List? ?? [];
       if (mounted) {
         setState(() {
           _messages.clear();
-          _messages.addAll(
-            list.map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>)),
-          );
+          _messageIds.clear();
+          final loaded = list.map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>));
+          for (final msg in loaded) {
+            // 过滤清空之前的消息
+            if (clearedAt != null && msg.createdAt.isNotEmpty) {
+              final msgTime = DateTime.tryParse(msg.createdAt);
+              if (msgTime != null && msgTime.isBefore(clearedAt)) continue;
+            }
+            if (msg.id != null) _messageIds.add(msg.id!);
+            _messages.add(msg);
+          }
           _hasMore = data['has_more'] == true;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -173,8 +259,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       if (mounted) {
         final older = list
             .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
+            .where((msg) => msg.id == null || !_messageIds.contains(msg.id))
             .toList();
         setState(() {
+          for (final msg in older) {
+            if (msg.id != null) _messageIds.add(msg.id!);
+          }
           _messages.insertAll(0, older);
           _hasMore = data['has_more'] == true;
         });
@@ -246,6 +336,15 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
     final chatProvider = context.read<ChatProvider>();
     chatProvider.sendPrivateMessage(widget.friendId, text);
+
+    // 更新会话列表
+    context.read<ConversationProvider>().onMessageSent(
+      targetId: widget.friendId,
+      targetType: 'private',
+      content: text,
+      name: widget.friendName,
+      avatar: widget.friendAvatar,
+    );
 
     // 乐观本地添加
     final user = auth.user!;
@@ -342,24 +441,6 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     }
   }
 
-  Future<void> _uploadVoiceAndSend(String filePath) async {
-    if (_isUploading) return;
-    setState(() => _isUploading = true);
-    try {
-      final result = await _chatService.uploadVoice(filePath);
-      if (result != null && mounted) {
-        _sendMediaLocal('voice', result);
-      } else if (mounted) {
-        Fluttertoast.showToast(msg: 'Upload failed');
-      }
-    } catch (e) {
-      debugPrint('[PrivateChat] uploadVoice error: $e');
-      if (mounted) Fluttertoast.showToast(msg: 'Upload failed');
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
-    }
-  }
-
   void _sendMediaLocal(String mediaType, Map<String, dynamic> result) {
     final chatProvider = context.read<ChatProvider>();
     chatProvider.sendPrivateMediaMessage(
@@ -368,6 +449,22 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       mediaUrl: result['url'] ?? '',
       thumbUrl: result['thumb_url'] ?? '',
       mediaInfo: result['media_info'],
+    );
+
+    // 更新会话列表
+    final l = AppLocalizations.of(context)!;
+    String preview = mediaType == 'image'
+        ? '[${l.get("image")}]'
+        : mediaType == 'video'
+            ? '[${l.get("video")}]'
+            : '[${l.get("voice")}]';
+    context.read<ConversationProvider>().onMessageSent(
+      targetId: widget.friendId,
+      targetType: 'private',
+      content: preview,
+      msgType: mediaType,
+      name: widget.friendName,
+      avatar: widget.friendAvatar,
     );
 
     // 乐观本地添加
@@ -392,67 +489,149 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     _scrollToBottomIfNeeded();
   }
 
-  // ===== 语音录制 =====
+  // ===== 微信风格录音：按住说话 / 松开发送 / 上滑取消 =====
 
-  Future<void> _startRecording() async {
-    try {
-      if (await _audioRecorder.hasPermission()) {
-        final dir = await getTemporaryDirectory();
-        _recordPath = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
-          path: _recordPath!,
-        );
-        setState(() {
-          _isRecording = true;
-          _recordDuration = 0;
-        });
-        _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-          if (mounted) {
-            setState(() => _recordDuration++);
-            if (_recordDuration >= 60) {
-              _stopRecordingAndSend();
-            }
-          }
-        });
+  Future<void> _onVoiceStart() async {
+    if (_isRecording) return;
+
+    if (!await _audioRecorder.hasPermission()) return;
+
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isRecording = true;
+      _cancellingVoice = false;
+      _recordDuration = 0;
+      _amplitudes = [];
+      _currentAmplitude = 0;
+    });
+
+    // 每秒计时
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _recordDuration++);
+      _recordOverlay?.markNeedsBuild();
+      if (_recordDuration >= 60) {
+        _onVoiceEnd();
       }
-    } catch (e) {
-      debugPrint('[PrivateChat] startRecording error: $e');
+    });
+
+    // 每 100ms 采集振幅，用于声波动画
+    _amplitudeTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (_) async {
+      if (!mounted || !_isRecording) return;
+      try {
+        final amp = await _audioRecorder.getAmplitude();
+        // amp.current 通常在 -60(安静) ~ 0(最大) dB 之间
+        final normalized = ((amp.current + 50) / 50).clamp(0.0, 1.0);
+        _currentAmplitude = normalized;
+        if (_amplitudes.length >= 30) _amplitudes.removeAt(0);
+        _amplitudes.add(normalized);
+        _recordOverlay?.markNeedsBuild();
+      } catch (_) {}
+    });
+
+    _showRecordOverlay();
+  }
+
+  void _onVoiceMove(LongPressMoveUpdateDetails details) {
+    // 手指上移超过 80px 视为进入取消区域
+    final isCancelling = details.offsetFromOrigin.dy < -80;
+    if (isCancelling != _cancellingVoice) {
+      setState(() => _cancellingVoice = isCancelling);
+      _recordOverlay?.markNeedsBuild();
     }
   }
 
-  Future<void> _stopRecordingAndSend() async {
+  Future<void> _onVoiceEnd() async {
+    _removeRecordOverlay();
     _recordTimer?.cancel();
+    _recordTimer = null;
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+
+    final path = await _audioRecorder.stop();
+    final duration = _recordDuration;
+    final wasCancelled = _cancellingVoice;
+
+    setState(() {
+      _isRecording = false;
+      _cancellingVoice = false;
+      _recordDuration = 0;
+    });
+
+    if (wasCancelled || path == null || duration < 1) return;
+
+    // 在列表中显示占位语音气泡（loading 状态）
+    setState(() {
+      _uploadingVoiceDuration = duration;
+    });
+    _needsAutoScroll = true;
+
     try {
-      final path = await _audioRecorder.stop();
-      if (path != null && _recordDuration >= 1 && !_cancellingVoice) {
-        await _uploadVoiceAndSend(path);
+      final result = await _chatService.uploadVoice(path);
+      if (result != null && mounted) {
+        _sendMediaLocal('voice', {
+          ...result,
+          'media_info': {'duration': duration},
+        });
+      } else if (mounted) {
+        Fluttertoast.showToast(
+            msg: AppLocalizations.of(context)!.get('upload_failed'));
       }
     } catch (e) {
-      debugPrint('[PrivateChat] stopRecording error: $e');
-    } finally {
       if (mounted) {
-        setState(() {
-          _isRecording = false;
-          _cancellingVoice = false;
-          _recordDuration = 0;
-        });
+        Fluttertoast.showToast(
+            msg: AppLocalizations.of(context)!.get('upload_failed'));
       }
+    } finally {
+      if (mounted) setState(() => _uploadingVoiceDuration = null);
     }
   }
 
-  Future<void> _cancelRecording() async {
+  void _onVoiceCancel() async {
+    _removeRecordOverlay();
     _recordTimer?.cancel();
-    try {
-      await _audioRecorder.stop();
-    } catch (_) {}
-    if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _cancellingVoice = false;
-        _recordDuration = 0;
-      });
-    }
+    _recordTimer = null;
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
+    await _audioRecorder.stop();
+    setState(() {
+      _isRecording = false;
+      _cancellingVoice = false;
+      _recordDuration = 0;
+    });
+  }
+
+  // ===== 录音浮层 Overlay =====
+
+  void _showRecordOverlay() {
+    _removeRecordOverlay();
+    _recordOverlay = OverlayEntry(builder: (_) => _buildRecordOverlay());
+    Overlay.of(context).insert(_recordOverlay!);
+  }
+
+  void _removeRecordOverlay() {
+    _recordOverlay?.remove();
+    _recordOverlay = null;
+  }
+
+  Widget _buildRecordOverlay() {
+    return VoiceRecordOverlay(
+      isRecording: _isRecording,
+      cancelling: _cancellingVoice,
+      recordDuration: _recordDuration,
+      amplitudes: _amplitudes,
+      currentAmplitude: _currentAmplitude,
+    );
   }
 
   // ===== UI =====
@@ -472,13 +651,30 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_outline, size: 22),
+            icon: const Icon(Icons.more_horiz, size: 22),
             onPressed: () {
-              UserProfilePage.show(
+              Navigator.push(
                 context,
-                userId: widget.friendId,
-                nickname: widget.friendName,
-                avatar: widget.friendAvatar,
+                MaterialPageRoute(
+                  builder: (_) => PrivateChatDetailPage(
+                    friendId: widget.friendId,
+                    friendName: widget.friendName,
+                    friendAvatar: widget.friendAvatar,
+                    friendUserCode: widget.friendUserCode,
+                    onClearMessages: () async {
+                      // 持久化清空时间戳，下次加载历史时过滤
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString(
+                        'chat_cleared_at_${widget.friendId}',
+                        DateTime.now().toIso8601String(),
+                      );
+                      setState(() {
+                        _messages.clear();
+                        _messageIds.clear();
+                      });
+                    },
+                  ),
+                ),
               );
             },
           ),
@@ -498,7 +694,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
             Expanded(
               child: _isLoading && _messages.isEmpty
                   ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
-                  : _messages.isEmpty
+                  : _messages.isEmpty && _uploadingVoiceDuration == null
                       ? _buildEmpty(l)
                       : NotificationListener<ScrollNotification>(
                           onNotification: (notification) {
@@ -511,8 +707,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                           child: ListView.builder(
                             controller: _scrollCtrl,
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            itemCount: _messages.length,
+                            itemCount: _messages.length + (_uploadingVoiceDuration != null ? 1 : 0),
                             itemBuilder: (ctx, index) {
+                              // 末尾额外项：语音上传占位
+                              if (index >= _messages.length) {
+                                return _buildUploadingVoiceBubble();
+                              }
                               final msg = _messages[index];
                               Widget? dateSeparator;
                               if (index == 0 || _shouldShowDateSeparator(index)) {
@@ -575,206 +775,62 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Widget _buildInputBar(AppLocalizations l) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 8, right: 8, top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // 语音/键盘切换
-          IconButton(
-            icon: Icon(
-              _voiceMode ? Icons.keyboard : Icons.mic_none,
-              color: AppTheme.textSecondary,
-              size: 24,
-            ),
-            onPressed: () {
-              setState(() {
-                _voiceMode = !_voiceMode;
-                _showEmojiPicker = false;
-                _showMediaPanel = false;
-              });
-            },
-          ),
-
-          // 输入区
-          Expanded(
-            child: _voiceMode
-                ? _buildVoiceButton(l)
-                : TextField(
-                    controller: _msgCtrl,
-                    minLines: 1,
-                    maxLines: 4,
-                    maxLength: 500,
-                    textInputAction: TextInputAction.newline,
-                    decoration: InputDecoration(
-                      hintText: l.get('chat_input_hint'),
-                      hintStyle: const TextStyle(color: AppTheme.textHint),
-                      counterText: '',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      filled: true,
-                      fillColor: AppTheme.scaffoldBg,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide: const BorderSide(color: AppTheme.primaryColor, width: 1.5),
-                      ),
-                    ),
-                    onTap: () {
-                      setState(() {
-                        _showEmojiPicker = false;
-                        _showMediaPanel = false;
-                      });
-                    },
-                  ),
-          ),
-
-          // Emoji 按钮
-          if (!_voiceMode)
-            IconButton(
-              icon: Icon(
-                _showEmojiPicker ? Icons.keyboard : Icons.emoji_emotions_outlined,
-                color: AppTheme.textSecondary,
-                size: 24,
-              ),
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                setState(() {
-                  _showEmojiPicker = !_showEmojiPicker;
-                  _showMediaPanel = false;
-                });
-              },
-            ),
-
-          // +多媒体 / 发送按钮
-          if (_hasInputText)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
-                  ),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                  onPressed: _sendTextMessage,
-                ),
-              ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: AppTheme.textSecondary, size: 26),
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                setState(() {
-                  _showMediaPanel = !_showMediaPanel;
-                  _showEmojiPicker = false;
-                });
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVoiceButton(AppLocalizations l) {
-    return GestureDetector(
-      onLongPressStart: (_) => _startRecording(),
-      onLongPressEnd: (_) {
-        if (_cancellingVoice) {
-          _cancelRecording();
-        } else {
-          _stopRecordingAndSend();
-        }
+    return ChatInputBar(
+      controller: _msgCtrl,
+      voiceMode: _voiceMode,
+      showEmojiPicker: _showEmojiPicker,
+      showMediaPanel: _showMediaPanel,
+      isUploading: _isUploading,
+      hasInputText: _hasInputText,
+      onSend: _sendTextMessage,
+      onToggleVoice: () {
+        setState(() {
+          _voiceMode = !_voiceMode;
+          _showEmojiPicker = false;
+          _showMediaPanel = false;
+        });
       },
-      onLongPressMoveUpdate: (details) {
-        final dy = details.localOffsetFromOrigin.dy;
-        setState(() => _cancellingVoice = dy < -50);
+      onToggleEmoji: () {
+        FocusScope.of(context).unfocus();
+        setState(() {
+          _showEmojiPicker = !_showEmojiPicker;
+          _showMediaPanel = false;
+        });
       },
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: _isRecording
-              ? (_cancellingVoice ? AppTheme.dangerColor.withOpacity(0.1) : AppTheme.primaryColor.withOpacity(0.1))
-              : AppTheme.scaffoldBg,
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Center(
-          child: Text(
-            _isRecording
-                ? (_cancellingVoice ? l.get('voice_cancel') : '${l.get('voice_recording')} ${_recordDuration}s')
-                : l.get('voice_hold_to_talk'),
-            style: TextStyle(
-              fontSize: 14,
-              color: _isRecording
-                  ? (_cancellingVoice ? AppTheme.dangerColor : AppTheme.primaryColor)
-                  : AppTheme.textSecondary,
-              fontWeight: _isRecording ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ),
-      ),
+      onToggleMedia: () {
+        FocusScope.of(context).unfocus();
+        setState(() {
+          _showMediaPanel = !_showMediaPanel;
+          _showEmojiPicker = false;
+        });
+      },
+      onTapTextField: () {
+        setState(() {
+          _showEmojiPicker = false;
+          _showMediaPanel = false;
+        });
+      },
+      onVoiceStart: _onVoiceStart,
+      onVoiceMove: _onVoiceMove,
+      onVoiceEnd: _onVoiceEnd,
+      onVoiceCancel: _onVoiceCancel,
+      isRecording: _isRecording,
+      cancellingVoice: _cancellingVoice,
     );
   }
 
   Widget _buildMediaPanel(AppLocalizations l) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        border: Border(top: BorderSide(color: AppTheme.dividerColor, width: 0.5)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _mediaItem(Icons.image_outlined, l.get('media_image'), _pickAndSendImage),
-          _mediaItem(Icons.camera_alt_outlined, l.get('media_camera'), _takeAndSendPhoto),
-          _mediaItem(Icons.videocam_outlined, l.get('media_video'), _pickAndSendVideo),
-        ],
-      ),
-    );
-  }
-
-  Widget _mediaItem(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppTheme.scaffoldBg,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: AppTheme.textSecondary, size: 26),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textHint)),
-        ],
-      ),
+    return MediaPanel(
+      onPickImage: _pickAndSendImage,
+      onTakePhoto: _takeAndSendPhoto,
+      onPickVideo: _pickAndSendVideo,
+      onSendRedPacket: context.read<AppConfigProvider>().walletEnabled
+          ? _showRedPacketDialog
+          : null,
+      pickImageLabel: l.get('media_image'),
+      takePhotoLabel: l.get('media_camera'),
+      pickVideoLabel: l.get('media_video'),
+      redPacketLabel: l.get('red_packet'),
     );
   }
 
@@ -783,44 +839,65 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   Widget _buildMessageBubble(ChatMessageModel msg, int? currentUserId) {
     final isMe = currentUserId != null && msg.userId == currentUserId;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        children: [
-          // 昵称 + 时间
-          Padding(
-            padding: EdgeInsets.only(bottom: 2, left: isMe ? 2 : 46, right: isMe ? 46 : 2),
-            child: Text(
-              '${msg.nickname}  ${_formatTime(msg.createdAt)}',
-              style: const TextStyle(fontSize: 11, color: AppTheme.textHint),
-            ),
+    return MessageBubble(
+      nickname: msg.nickname,
+      timeText: _formatTime(msg.createdAt),
+      isMe: isMe,
+      avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
+      onLongPress: () => _showMessageActions(msg, isMe),
+      onAvatarTap: isMe ? null : () => UserProfilePage.show(
+        context,
+        userId: msg.userId,
+        nickname: msg.nickname,
+        avatar: msg.avatar,
+        userCode: msg.userCode,
+      ),
+      content: _buildBubbleContent(msg, isMe),
+    );
+  }
+
+  /// 长按消息弹出操作菜单
+  void _showMessageActions(ChatMessageModel msg, bool isMe) {
+    showMessageActions(
+      context: context,
+      msg: msg,
+      isMe: isMe,
+      onReport: () => _reportMessage(msg),
+    );
+  }
+
+  /// 举报消息
+  void _reportMessage(ChatMessageModel msg) {
+    final l = AppLocalizations.of(context)!;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.get('chat_report')),
+        content: Text(l.get('report_confirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.get('cancel')),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-            children: [
-              if (!isMe) ...[
-                // 暂时注释掉点击头像弹窗功能
-                // GestureDetector(
-                //   onTap: () => UserProfilePage.show(
-                //     context,
-                //     userId: msg.userId,
-                //     nickname: msg.nickname,
-                //     avatar: msg.avatar,
-                //     userCode: msg.userCode,
-                //   ),
-                //   child: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
-                // ),
-                AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
-                const SizedBox(width: 8),
-              ],
-              Flexible(child: _buildBubbleContent(msg, isMe)),
-              if (isMe) ...[
-                const SizedBox(width: 8),
-                AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
-              ],
-            ],
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final success = await _chatService.reportMessage(
+                messageId: msg.id ?? 0,
+                userId: msg.userId,
+                reason: 4,
+              );
+              if (mounted) {
+                Fluttertoast.showToast(
+                  msg: success ? l.get('report_success') : l.get('network_error'),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.dangerColor,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(l.get('confirm')),
           ),
         ],
       ),
@@ -828,136 +905,107 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Widget _buildBubbleContent(ChatMessageModel msg, bool isMe) {
-    switch (msg.msgType) {
-      case ChatMsgType.image:
-        return _buildImageBubble(msg, isMe);
-      case ChatMsgType.video:
-        return _buildVideoBubble(msg, isMe);
-      case ChatMsgType.voice:
-        return _buildVoiceBubble(msg, isMe);
-      default:
-        return _buildTextBubble(msg, isMe);
+    final isVoicePlaying = _playingMsgId == msg.id;
+
+    int redPacketId = 0;
+    String greeting = '';
+    try {
+      if (msg.content.startsWith('{')) {
+        final data = jsonDecode(msg.content) as Map<String, dynamic>;
+        redPacketId = data['red_packet_id'] ?? 0;
+        greeting = data['greeting'] ?? '';
+      }
+    } catch (_) {}
+    final hasClaimed = _claimedRedPacketIds.contains(redPacketId);
+
+    return BubbleContent(
+      msg: msg,
+      isMe: isMe,
+      onImageTap: () => _showFullImage(UrlHelper.ensureAbsolute(msg.mediaUrl)),
+      onVideoTap: () => _playVideo(UrlHelper.ensureAbsolute(msg.mediaUrl)),
+      onVoiceTap: () => _playVoice(msg),
+      isVoicePlaying: isVoicePlaying,
+      hasClaimed: hasClaimed,
+      onRedPacketTap: () {
+        if (redPacketId > 0) {
+          _showRedPacketOpenDialog(redPacketId, msg.nickname, msg.avatar, greeting);
+        }
+      },
+    );
+  }
+
+  Future<void> _showRedPacketOpenDialog(int redPacketId, String senderName, String senderAvatar, String greeting) async {
+    if (_claimingRedPacketIds.contains(redPacketId)) return;
+    _claimingRedPacketIds.add(redPacketId);
+
+    try {
+      // 先查询红包详情，判断是否已领取
+      bool alreadyClaimed = false;
+      double claimedAmount = 0;
+      try {
+        final detail = await WalletService().getRedPacketDetail(redPacketId);
+        if (detail != null && detail.hasClaimed) {
+          alreadyClaimed = true;
+          claimedAmount = detail.myClaim!.amount;
+          if (!_claimedRedPacketIds.contains(redPacketId)) {
+            setState(() => _claimedRedPacketIds.add(redPacketId));
+          }
+        }
+      } catch (_) {}
+
+      if (!mounted) return;
+
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        barrierColor: Colors.transparent,
+        barrierDismissible: false,
+        builder: (_) => RedPacketOpenDialog(
+          redPacketId: redPacketId,
+          senderName: senderName,
+          senderAvatar: senderAvatar,
+          greeting: greeting,
+          alreadyClaimed: alreadyClaimed,
+          claimedAmount: claimedAmount,
+        ),
+      );
+
+      if (result != null && mounted) {
+        if (result['claimed'] == true) {
+          setState(() => _claimedRedPacketIds.add(redPacketId));
+          final amount = result['amount'] as double? ?? 0;
+          final l = AppLocalizations.of(context)!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${l.get("claimed")} ${CurrencyConfig.format(amount)}'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+        Navigator.pushNamed(context, AppRoutes.redPacketDetail, arguments: redPacketId);
+      }
+    } finally {
+      _claimingRedPacketIds.remove(redPacketId);
     }
   }
 
-  Widget _buildTextBubble(ChatMessageModel msg, bool isMe) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: isMe ? AppTheme.primaryColor : AppTheme.cardBg,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(isMe ? 14 : 4),
-          topRight: Radius.circular(isMe ? 4 : 14),
-          bottomLeft: const Radius.circular(14),
-          bottomRight: const Radius.circular(14),
-        ),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Text(
-        msg.content,
-        style: TextStyle(fontSize: 14, color: isMe ? Colors.white : AppTheme.textPrimary),
-      ),
-    );
+  void _showRedPacketDialog() {
+    setState(() => _showMediaPanel = false);
+    showDialog(
+      context: context,
+      builder: (_) => RedPacketSendDialog(targetType: 2, targetId: widget.friendId),
+    ).then((result) {
+      if (result != null) {
+        final chatProvider = context.read<ChatProvider>();
+        final redPacketId = result is Map ? (result['id'] ?? 0) : 0;
+        if (redPacketId > 0) {
+          chatProvider.sendPrivateRedPacketMessage(widget.friendId, redPacketId);
+        }
+      }
+    });
   }
 
-  Widget _buildImageBubble(ChatMessageModel msg, bool isMe) {
-    final url = msg.thumbUrl.isNotEmpty ? msg.thumbUrl : msg.mediaUrl;
-    return GestureDetector(
-      onTap: () => _showFullImage(msg.mediaUrl),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 200, maxHeight: 200),
-          child: CachedNetworkImage(
-            imageUrl: url,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              width: 120, height: 120,
-              color: AppTheme.scaffoldBg,
-              child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            errorWidget: (_, __, ___) => Container(
-              width: 120, height: 120,
-              color: AppTheme.scaffoldBg,
-              child: const Icon(Icons.broken_image, color: AppTheme.textHint),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVideoBubble(ChatMessageModel msg, bool isMe) {
-    final thumbUrl = msg.thumbUrl.isNotEmpty ? msg.thumbUrl : '';
-    return GestureDetector(
-      onTap: () => _playVideo(msg.mediaUrl),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (thumbUrl.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: thumbUrl,
-                width: 180, height: 120, fit: BoxFit.cover,
-              )
-            else
-              Container(width: 180, height: 120, color: Colors.black87),
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVoiceBubble(ChatMessageModel msg, bool isMe) {
-    final duration = msg.mediaInfo?['duration'] ?? 0;
-    final isPlaying = _playingMsgId == msg.id;
-    final width = math.min(50.0 + duration * 4.0, 200.0);
-
-    return GestureDetector(
-      onTap: () => _playVoice(msg),
-      child: Container(
-        width: width,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: isMe ? AppTheme.primaryColor : AppTheme.cardBg,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(isMe ? 14 : 4),
-            topRight: Radius.circular(isMe ? 4 : 14),
-            bottomLeft: const Radius.circular(14),
-            bottomRight: const Radius.circular(14),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-              size: 20,
-              color: isMe ? Colors.white : AppTheme.primaryColor,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '${duration}s',
-              style: TextStyle(
-                fontSize: 13,
-                color: isMe ? Colors.white : AppTheme.textPrimary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Widget _buildUploadingVoiceBubble() {
+    return UploadingVoiceBubble(duration: _uploadingVoiceDuration ?? 0);
   }
 
   void _showFullImage(String url) {
@@ -990,15 +1038,26 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Future<void> _playVoice(ChatMessageModel msg) async {
-    try {
-      if (_playingMsgId == msg.id) {
-        await _audioPlayer.stop();
-        setState(() => _playingMsgId = null);
-        return;
-      }
+    final absUrl = UrlHelper.ensureAbsolute(msg.mediaUrl);
 
+    // 如果点击正在播放的语音，则停止
+    if (_playingMsgId == msg.id) {
+      await _audioPlayer.stop();
+      setState(() => _playingMsgId = null);
+      return;
+    }
+
+    // URL 为空或无效，提示错误
+    if (!UrlHelper.isValidNetworkUrl(absUrl)) {
+      debugPrint('[PrivateChat] Invalid voice URL: ${msg.mediaUrl}');
+      Fluttertoast.showToast(
+          msg: AppLocalizations.of(context)!.get('play_voice_failed'));
+      return;
+    }
+
+    try {
       setState(() => _playingMsgId = msg.id);
-      await _audioPlayer.setUrl(msg.mediaUrl);
+      await _audioPlayer.setUrl(absUrl);
       _audioPlayer.play();
       _audioPlayer.playerStateStream.listen((state) {
         if (state.processingState == ProcessingState.completed) {
@@ -1006,8 +1065,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         }
       });
     } catch (e) {
-      debugPrint('[PrivateChat] playVoice error: $e');
-      if (mounted) setState(() => _playingMsgId = null);
+      debugPrint('[PrivateChat] playVoice error: $e, url: $absUrl');
+      if (mounted) {
+        setState(() => _playingMsgId = null);
+        Fluttertoast.showToast(
+            msg: AppLocalizations.of(context)!.get('play_voice_failed'));
+      }
     }
   }
 
@@ -1025,40 +1088,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Widget _buildDateSeparator(String dateStr) {
-    String label;
-    try {
-      final dt = DateTime.parse(dateStr);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final msgDate = DateTime(dt.year, dt.month, dt.day);
-      final l = AppLocalizations.of(context)!;
-
-      if (msgDate == today) {
-        label = l.get('chat_date_today');
-      } else if (msgDate == today.subtract(const Duration(days: 1))) {
-        label = l.get('chat_date_yesterday');
-      } else if (dt.year == now.year) {
-        label = '${dt.month}/${dt.day}';
-      } else {
-        label = '${dt.year}/${dt.month}/${dt.day}';
-      }
-    } catch (e) {
-      label = dateStr;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: AppTheme.dividerColor, thickness: 0.5)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textHint)),
-          ),
-          Expanded(child: Divider(color: AppTheme.dividerColor, thickness: 0.5)),
-        ],
-      ),
-    );
+    return DateSeparator(dateStr: dateStr);
   }
 
   Widget _buildEmpty(AppLocalizations l) {

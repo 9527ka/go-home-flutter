@@ -9,8 +9,10 @@ import '../../providers/conversation_provider.dart';
 import '../../providers/friend_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/post_provider.dart';
+import '../../providers/app_config_provider.dart';
 import '../../widgets/post_card.dart';
 import '../../widgets/disclaimer_banner.dart';
+import '../../widgets/ai_banner.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,12 +21,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ScrollController _scrollCtrl = ScrollController();
+  bool _aiBannerDismissed = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // 仅当 Splash 未预加载时才请求（避免重复加载）
       final postProvider = context.read<PostProvider>();
@@ -32,23 +36,7 @@ class _HomePageState extends State<HomePage> {
         postProvider.refresh();
       }
 
-      // 仅登录用户才调用需要鉴权的接口（游客调用会触发 401）
-      final auth = context.read<AuthProvider>();
-      if (auth.isLoggedIn) {
-        final chatProvider = context.read<ChatProvider>();
-        if (!chatProvider.isLoading) {
-          chatProvider.checkUnread();
-        }
-        // 绑定 ConversationProvider 到 ChatProvider，实时接收私聊/群聊新消息
-        final conversationProvider = context.read<ConversationProvider>();
-        conversationProvider.bindChatProvider(chatProvider);
-        conversationProvider.loadConversations();
-        // 绑定 FriendProvider，实时接收好友请求通知
-        final friendProvider = context.read<FriendProvider>();
-        friendProvider.bindChatProvider(chatProvider);
-        friendProvider.fetchRequestCount();
-        context.read<NotificationProvider>().fetchUnreadCount();
-      }
+      _initLoggedInFeatures();
     });
     _scrollCtrl.addListener(() {
       if (_scrollCtrl.position.pixels >=
@@ -58,9 +46,50 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// 初始化登录用户相关功能（WebSocket、会话、好友、通知）
+  void _initLoggedInFeatures() {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
+
+    final chatProvider = context.read<ChatProvider>();
+    // 建立 WebSocket 连接，确保首页能实时接收消息通知
+    chatProvider.onPageEnter();
+    if (!chatProvider.isLoading) {
+      chatProvider.checkUnread();
+    }
+    // 绑定 ConversationProvider 到 ChatProvider，实时接收私聊/群聊新消息
+    final conversationProvider = context.read<ConversationProvider>();
+    conversationProvider.setCurrentUserId(auth.user?.id);
+    conversationProvider.bindChatProvider(chatProvider);
+    conversationProvider.loadConversations();
+    // 绑定 FriendProvider，实时接收好友请求通知
+    final friendProvider = context.read<FriendProvider>();
+    friendProvider.bindChatProvider(chatProvider);
+    friendProvider.fetchRequestCount();
+    context.read<NotificationProvider>().fetchUnreadCount();
+  }
+
+  /// App 从后台恢复时，刷新未读状态（WebSocket 断线期间可能错过消息）
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      final auth = context.read<AuthProvider>();
+      if (auth.isLoggedIn) {
+        context.read<ConversationProvider>().loadConversations();
+        context.read<ChatProvider>().checkUnread();
+        context.read<NotificationProvider>().fetchUnreadCount();
+      }
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.dispose();
+    // 释放 WebSocket 引用计数
+    try {
+      context.read<ChatProvider>().onPageLeave();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -97,16 +126,27 @@ class _HomePageState extends State<HomePage> {
                       itemCount: postProvider.posts.length +
                           (postProvider.hasMore ? 1 : 0),
                       itemBuilder: (ctx, index) {
-                        if (index >= postProvider.posts.length) {
+                        if (!_aiBannerDismissed && index == 0) {
+                          final l = AppLocalizations.of(context)!;
+                          return AiBanner(
+                            style: AiBannerStyle.prominent,
+                            title: l.get('ai_banner_title'),
+                            subtitle: l.get('ai_banner_subtitle'),
+                            dismissible: true,
+                            onDismiss: () => setState(() => _aiBannerDismissed = true),
+                          );
+                        }
+                        final postIndex = index;
+                        if (postIndex >= postProvider.posts.length) {
                           return _buildLoadingMore();
                         }
                         return PostCard(
-                          post: postProvider.posts[index],
+                          post: postProvider.posts[postIndex],
                           onTap: () {
                             Navigator.pushNamed(
                               context,
                               AppRoutes.postDetail,
-                              arguments: postProvider.posts[index].id,
+                              arguments: postProvider.posts[postIndex].id,
                             );
                           },
                         );
@@ -205,42 +245,40 @@ class _HomePageState extends State<HomePage> {
           tooltip: l.get('search'),
           onPressed: () => Navigator.pushNamed(context, AppRoutes.postSearch),
         ),
-        IconButton(
-          icon: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              const Icon(Icons.chat_bubble_outline_rounded, size: 22),
-              // 未读红点（公共聊天室 + 私聊/群聊）
-              if (chatProvider.hasUnread || conversationProvider.hasUnread)
-                Positioned(
-                  right: -3,
-                  top: -3,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.dangerColor,
-                      shape: BoxShape.circle,
-                    ),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 22),
+              tooltip: l.get('conversations'),
+              onPressed: () async {
+                // 未登录用户需要先登录才能进入聊天室
+                if (!auth.isLoggedIn) {
+                  Navigator.pushNamed(context, AppRoutes.login);
+                  return;
+                }
+                await Navigator.pushNamed(context, AppRoutes.conversations);
+                if (mounted) {
+                  conversationProvider.loadConversations();
+                  chatProvider.checkUnread();
+                }
+              },
+            ),
+            // 未读红点（公共聊天室 + 私聊/群聊）
+            if (chatProvider.hasUnread || conversationProvider.hasUnread)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.dangerColor,
+                    shape: BoxShape.circle,
                   ),
                 ),
-            ],
-          ),
-          tooltip: l.get('conversations'),
-          onPressed: () async {
-            // 未登录用户需要先登录才能进入聊天室
-            if (!auth.isLoggedIn) {
-              Navigator.pushNamed(context, AppRoutes.login);
-              return;
-            }
-            // HIDDEN_FEATURE: 会话列表 - 原逻辑进入 AppRoutes.conversations，现直接进入聊天室
-            // 恢复时改回: await Navigator.pushNamed(context, AppRoutes.conversations);
-            // 并恢复: conversationProvider.loadConversations();
-            await Navigator.pushNamed(context, AppRoutes.chatRoom);
-            if (mounted) {
-              chatProvider.checkUnread();
-            }
-          },
+              ),
+          ],
         ),
       ],
     );
@@ -248,21 +286,29 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildCategoryFilter(PostProvider provider) {
     final l = AppLocalizations.of(context)!;
+    final configProvider = context.watch<AppConfigProvider>();
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Row(
         children: [
           _filterChip(
               l.get('category_all'), null, null, Icons.apps_rounded, provider),
-          const SizedBox(width: 8),
-          _filterChip(l.get('category_elder'), 2, AppTheme.elderColor,
-              Icons.elderly, provider),
-          const SizedBox(width: 8),
-          _filterChip(l.get('category_child'), 3, AppTheme.childColor,
-              Icons.child_care, provider),
-          const SizedBox(width: 8),
-          _filterChip(l.get('category_other'), -1, AppTheme.otherColor,
-              Icons.more_horiz_rounded, provider),
+          if (configProvider.isCategoryVisible(2)) ...[
+            const SizedBox(width: 8),
+            _filterChip(l.get('category_elder'), 2, AppTheme.elderColor,
+                Icons.elderly, provider),
+          ],
+          if (configProvider.isCategoryVisible(1)) ...[
+            const SizedBox(width: 8),
+            _filterChip(l.get('category_pet'), 1, AppTheme.petColor,
+                Icons.pets, provider),
+          ],
+          if (configProvider.isCategoryVisible(4)) ...[
+            const SizedBox(width: 8),
+            _filterChip(l.get('category_other'), 4, AppTheme.otherColor,
+                Icons.inventory_2_outlined, provider),
+          ],
         ],
       ),
     );

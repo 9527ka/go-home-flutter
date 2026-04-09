@@ -5,7 +5,6 @@
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>
-		<integer>2</integer>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
@@ -41,7 +40,6 @@
 	<string>We need permission to save images to your photo library.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>tel</string>
 		<string>https</string>
 	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
@@ -56,12 +54,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 </dict>
 </plist>

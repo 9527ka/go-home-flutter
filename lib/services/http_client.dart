@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http_parser/http_parser.dart';
 import '../config/api.dart';
 import '../utils/storage.dart';
 
@@ -155,11 +156,17 @@ class HttpClient {
     String path, {
     required String filePath,
     String fieldName = 'file',
+    String? fileName,
+    MediaType? contentType,
     Map<String, dynamic>? extra,
   }) async {
     try {
       final formData = FormData.fromMap({
-        fieldName: await MultipartFile.fromFile(filePath),
+        fieldName: await MultipartFile.fromFile(
+          filePath,
+          filename: fileName,
+          contentType: contentType,
+        ),
         ...?extra,
       });
 
@@ -176,10 +183,15 @@ class HttpClient {
     required List<int> bytes,
     required String fileName,
     String fieldName = 'file',
+    MediaType? contentType,
   }) async {
     try {
       final formData = FormData.fromMap({
-        fieldName: MultipartFile.fromBytes(bytes, filename: fileName),
+        fieldName: MultipartFile.fromBytes(
+          bytes,
+          filename: fileName,
+          contentType: contentType,
+        ),
       });
 
       final response = await _dio.post(path, data: formData);

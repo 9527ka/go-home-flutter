@@ -57,12 +57,4 @@ class Validators {
     return null;
   }
 
-  /// ⚠️ 儿童地址校验 — 不允许精确门牌号
-  static String? childAddress(String? value) {
-    if (value == null || value.isEmpty) return null; // 地址非必填
-    if (RegExp(r'\d+号楼|\d+栋|\d+单元|\d+室|\d+号$').hasMatch(value)) {
-      return '为保护儿童安全，请勿填写精确门牌号';
-    }
-    return null;
-  }
 }

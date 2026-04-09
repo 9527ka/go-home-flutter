@@ -5,8 +5,7 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/chat_provider.dart';
-// HIDDEN_FEATURE: 好友 - 恢复时取消注释
-// import '../../providers/friend_provider.dart';
+import '../../providers/friend_provider.dart';
 
 /// User profile bottom sheet displayed when tapping a user's avatar in chat.
 class UserProfilePage extends StatefulWidget {
@@ -52,9 +51,22 @@ class UserProfilePage extends StatefulWidget {
 }
 
 class _UserProfilePageState extends State<UserProfilePage> {
-  // HIDDEN_FEATURE: 好友 - 恢复时取消注释
-  // bool _isSendingRequest = false;
+  bool _isSendingRequest = false;
   bool _isBlocking = false;
+  bool _showGreetingForm = false;
+  late final TextEditingController _greetingCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _greetingCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _greetingCtrl.dispose();
+    super.dispose();
+  }
 
   /// System avatar color and icon mapping
   static const _sysAvatarMap = <String, List<dynamic>>{
@@ -73,17 +85,27 @@ class _UserProfilePageState extends State<UserProfilePage> {
     '/system/avatars/avatar_10.svg': [Color(0xFFEAB308), Icons.face_6],
   };
 
-  // HIDDEN_FEATURE: 好友 - 恢复时取消注释
-  // Future<void> _handleAddFriend() async {
-  //   setState(() => _isSendingRequest = true);
-  //   final error = await context.read<FriendProvider>().sendRequest(
-  //         toId: widget.userId,
-  //       );
-  //   if (!mounted) return;
-  //   setState(() => _isSendingRequest = false);
-  //   final l = AppLocalizations.of(context)!;
-  //   Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
-  // }
+  void _showGreetingInput() {
+    final l = AppLocalizations.of(context)!;
+    _greetingCtrl.text = l.get('default_greeting');
+    setState(() => _showGreetingForm = true);
+  }
+
+  Future<void> _confirmSendRequest() async {
+    final message = _greetingCtrl.text.trim();
+    setState(() => _isSendingRequest = true);
+    final error = await context.read<FriendProvider>().sendRequest(
+          toId: widget.userId,
+          message: message,
+        );
+    if (!mounted) return;
+    setState(() {
+      _isSendingRequest = false;
+      _showGreetingForm = false;
+    });
+    final l = AppLocalizations.of(context)!;
+    Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
+  }
 
   Future<void> _handleToggleBlock() async {
     final chatProvider = context.read<ChatProvider>();
@@ -124,6 +146,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       'friendId': widget.userId,
       'friendName': widget.nickname,
       'friendAvatar': widget.avatar,
+      'friendUserCode': widget.userCode,
     });
   }
 
@@ -135,8 +158,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    // HIDDEN_FEATURE: 好友 - 恢复时取消注释
-    // final friendProvider = context.watch<FriendProvider>();
+    final friendProvider = context.watch<FriendProvider>();
     final chatProvider = context.watch<ChatProvider>();
     final isBlocked = chatProvider.isUserBlocked(widget.userId);
 
@@ -193,54 +215,105 @@ class _UserProfilePageState extends State<UserProfilePage> {
                 color: AppTheme.textHint,
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
 
-            // Action buttons
-            Row(
-              children: [
-                // HIDDEN_FEATURE: 好友 - 原逻辑：非好友显示"添加好友"，好友显示"发消息"；现统一显示"发消息"
-                Expanded(
-                  child: _buildActionButton(
-                    label: l.get('send_message'),
-                    icon: Icons.chat_bubble_outline_rounded,
-                    color: AppTheme.primaryColor,
-                    isLoading: false,
-                    onPressed: _handleSendMessage,
+            // 打招呼表单（内联显示，避免 showDialog 导致 InheritedWidget 断言错误）
+            if (_showGreetingForm && !friendProvider.isFriend(widget.userId)) ...[
+              TextField(
+                controller: _greetingCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: l.get('greeting_label'),
+                  hintText: l.get('request_message_hint'),
+                  hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textHint),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
-                const SizedBox(width: 10),
+                maxLines: 2,
+                maxLength: 50,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildActionButton(
+                      label: l.get('cancel'),
+                      icon: Icons.close_rounded,
+                      color: AppTheme.textHint,
+                      isLoading: false,
+                      onPressed: () => setState(() => _showGreetingForm = false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildActionButton(
+                      label: l.get('send_request'),
+                      icon: Icons.send_rounded,
+                      color: AppTheme.primaryColor,
+                      isLoading: _isSendingRequest,
+                      onPressed: _isSendingRequest ? null : _confirmSendRequest,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ] else ...[
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: friendProvider.isFriend(widget.userId)
+                        ? _buildActionButton(
+                            label: l.get('send_message'),
+                            icon: Icons.chat_bubble_outline_rounded,
+                            color: AppTheme.primaryColor,
+                            isLoading: false,
+                            onPressed: _handleSendMessage,
+                          )
+                        : _buildActionButton(
+                            label: l.get('add_friend'),
+                            icon: Icons.person_add_outlined,
+                            color: AppTheme.primaryColor,
+                            isLoading: _isSendingRequest,
+                            onPressed: _showGreetingInput,
+                          ),
+                  ),
+                  const SizedBox(width: 10),
 
-                // Block / Unblock
-                Expanded(
-                  child: _buildActionButton(
-                    label: isBlocked
-                        ? l.get('unblock_user')
-                        : l.get('block_user'),
-                    icon: isBlocked
-                        ? Icons.visibility_rounded
-                        : Icons.block_rounded,
-                    color: isBlocked
-                        ? AppTheme.successColor
-                        : AppTheme.dangerColor,
-                    isLoading: _isBlocking,
-                    onPressed: _isBlocking ? null : _handleToggleBlock,
+                  // Block / Unblock
+                  Expanded(
+                    child: _buildActionButton(
+                      label: isBlocked
+                          ? l.get('unblock_user')
+                          : l.get('block_user'),
+                      icon: isBlocked
+                          ? Icons.visibility_rounded
+                          : Icons.block_rounded,
+                      color: isBlocked
+                          ? AppTheme.successColor
+                          : AppTheme.dangerColor,
+                      isLoading: _isBlocking,
+                      onPressed: _isBlocking ? null : _handleToggleBlock,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 10),
 
-                // Report
-                Expanded(
-                  child: _buildActionButton(
-                    label: l.get('report'),
-                    icon: Icons.flag_outlined,
-                    color: AppTheme.warningColor,
-                    isLoading: false,
-                    onPressed: _handleReport,
+                  // Report
+                  Expanded(
+                    child: _buildActionButton(
+                      label: l.get('report'),
+                      icon: Icons.flag_outlined,
+                      color: AppTheme.warningColor,
+                      isLoading: false,
+                      onPressed: _handleReport,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
           ],
         ),
       ),

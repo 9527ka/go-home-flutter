@@ -12,6 +12,10 @@ import 'providers/notification_provider.dart';
 import 'providers/friend_provider.dart';
 import 'providers/group_provider.dart';
 import 'providers/conversation_provider.dart';
+import 'providers/app_config_provider.dart';
+import 'providers/wallet_provider.dart';
+import 'providers/sign_provider.dart';
+import 'providers/interaction_provider.dart';
 import 'services/http_client.dart';
 import 'l10n/app_localizations.dart';
 
@@ -35,6 +39,10 @@ class GoHomeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FriendProvider()),
         ChangeNotifierProvider(create: (_) => GroupProvider()),
         ChangeNotifierProvider(create: (_) => ConversationProvider()),
+        ChangeNotifierProvider(create: (_) => AppConfigProvider()..fetchConfig()),
+        ChangeNotifierProvider(create: (_) => WalletProvider()),
+        ChangeNotifierProvider(create: (_) => SignProvider()),
+        ChangeNotifierProvider(create: (_) => InteractionProvider()),
       ],
       child: Consumer<LocaleProvider>(
         builder: (context, localeProvider, _) {

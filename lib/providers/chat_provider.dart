@@ -1,51 +1,26 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import '../config/api.dart';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
-import '../utils/content_filter.dart';
 import '../utils/storage.dart';
+import 'chat_ws_manager.dart';
+import 'chat_message_handler.dart';
+import 'chat_message_sender.dart';
 
-/// WebSocket 连接状态
-enum WsConnectionState {
-  disconnected, // 未连接
-  connecting,   // 连接中
-  connected,    // 已连接（未认证）
-  authenticated, // 已连接且认证
-  reconnecting, // 重连中
-}
+// Re-export so that existing `import 'chat_provider.dart'` still provides the enum.
+export 'chat_ws_manager.dart' show WsConnectionState;
 
 class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
 
-  // ===== 消息状态 =====
-  List<ChatMessageModel> _messages = [];
+  // ===== 组合模块 =====
+  late final WsChatManager _ws;
+  late final ChatMessageHandler _handler;
+  late final ChatMessageSender _sender;
+
+  // ===== UI 状态 =====
   bool _isLoading = false;
-  bool _hasMore = true;
   int _onlineCount = 0;
-
-  // ===== 消息去重 =====
-  final Set<int> _messageIds = {};
-
-  // ===== 待发送队列（断线重连后自动重发） =====
-  final List<String> _pendingMessages = [];
-
-  // ===== WebSocket 状态 =====
-  WsConnectionState _connectionState = WsConnectionState.disconnected;
-  WebSocketChannel? _channel;
-  StreamSubscription? _subscription;
-
-  // ===== 心跳 & 重连 =====
-  Timer? _pingTimer;
-  Timer? _pongTimeoutTimer;
-  Timer? _reconnectTimer;
-  int _reconnectAttempts = 0;
-  bool _manualDisconnect = false; // 用户主动断开，不自动重连
-  DateTime? _lastPongTime;
 
   // ===== 页面引用计数（控制 WS 生命周期） =====
   int _pageRefCount = 0;
@@ -53,54 +28,52 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   // ===== 未读消息红点 =====
   bool _hasUnread = false;
 
-  // ===== 外部消息 handler 注册（供 FriendProvider / ConversationProvider 订阅） =====
-  final Map<String, List<void Function(Map<String, dynamic>)>> _externalHandlers = {};
+  // ===== 屏蔽用户列表 =====
+  final Set<int> _blockedUserIds = {};
 
-  /// 注册外部消息处理器（如 friend_request, private_message 等）
-  void registerHandler(String type, void Function(Map<String, dynamic>) handler) {
-    _externalHandlers.putIfAbsent(type, () => []).add(handler);
-  }
-
-  /// 移除外部消息处理器
-  void removeHandler(String type, void Function(Map<String, dynamic>) handler) {
-    _externalHandlers[type]?.remove(handler);
-  }
-
-  // ===== 配置常量 =====
-  static const int _pingIntervalSec = 25;
-  static const int _pongTimeoutSec = 10;
-  static const int _maxReconnectAttempts = 20;
-  static const int _baseReconnectDelaySec = 2;
-  static const int _maxReconnectDelaySec = 60;
-  static const int _authTimeoutSec = 10;
-  static const int _maxMessageCacheSize = 500; // 内存中最多保留消息数
-
-  // ===== Getters =====
-  List<ChatMessageModel> get messages => _messages;
+  // ===== Getters（保持原有公共 API） =====
+  List<ChatMessageModel> get messages => _handler.messages;
   bool get isLoading => _isLoading;
-  bool get hasMore => _hasMore;
+  bool get hasMore => _handler.hasMore;
   int get onlineCount => _onlineCount;
-  WsConnectionState get connectionState => _connectionState;
-  bool get isConnected =>
-      _connectionState == WsConnectionState.connected ||
-      _connectionState == WsConnectionState.authenticated;
-  bool get isAuthenticated =>
-      _connectionState == WsConnectionState.authenticated;
-  int get reconnectAttempts => _reconnectAttempts;
-  int get pendingCount => _pendingMessages.length;
+  WsConnectionState get connectionState => _ws.connectionState;
+  bool get isConnected => _ws.isConnected;
+  bool get isAuthenticated => _ws.isAuthenticated;
+  int get reconnectAttempts => _ws.reconnectAttempts;
+  int get pendingCount => _ws.pendingCount;
   bool get hasUnread => _hasUnread;
+  Set<int> get blockedUserIds => _blockedUserIds;
 
   // ===== 初始化 & 销毁 =====
 
   ChatProvider() {
+    _ws = WsChatManager(
+      onMessage: _onWsMessage,
+      onStateChanged: _onWsStateChanged,
+    );
+    _handler = ChatMessageHandler();
+    _sender = ChatMessageSender(_ws);
+
+    // 消息列表变化时触发 UI 刷新 + 实时更新已读位置
+    _handler.onMessagesChanged = () {
+      if (_pageRefCount > 0) {
+        _saveLastReadId();
+      }
+      notifyListeners();
+    };
+
+    _handler.onOnlineCountChanged = (count) {
+      _onlineCount = count;
+      notifyListeners();
+    };
+
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _manualDisconnect = true;
-    _cleanup();
+    _ws.dispose();
     super.dispose();
   }
 
@@ -109,12 +82,10 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// ChatPage 进入时调用，开始连接
   void onPageEnter() {
     _pageRefCount++;
-    // 进入聊天页面，清除未读红点
     if (_hasUnread) {
       _hasUnread = false;
       notifyListeners();
     }
-    // 加载屏蔽用户列表
     loadBlockedUsers();
     if (_pageRefCount == 1) {
       debugPrint('[WS] Page entered, connecting...');
@@ -128,13 +99,9 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_pageRefCount <= 0) {
       _pageRefCount = 0;
       debugPrint('[WS] Page left, disconnecting...');
-      _manualDisconnect = true;
-      _cleanup();
-      _setConnectionState(WsConnectionState.disconnected);
+      _ws.disconnect();
       _onlineCount = 0;
-      // 不清除消息，下次进入聊天室还能看到
-
-      // 保存最后已读消息 ID（用于下次检测未读）
+      _saveChatCacheAsync();
       _saveLastReadId();
     }
   }
@@ -161,43 +128,18 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 保存当前最后一条消息的 ID 为已读
-  Future<void> _saveLastReadId() async {
-    if (_messages.isNotEmpty) {
-      // 从后往前找最新的有 id 的消息
-      for (var i = _messages.length - 1; i >= 0; i--) {
-        final id = _messages[i].id;
-        if (id != null && id > 0) {
-          await StorageUtil.saveLastReadChatId(id);
-          break;
-        }
-      }
-    }
-  }
-
   /// 监听 App 前后台切换
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 只在聊天页面打开时才处理
     if (_pageRefCount <= 0) return;
 
     switch (state) {
       case AppLifecycleState.resumed:
-        // 从后台回到前台，检查连接
-        if (!_manualDisconnect && _connectionState == WsConnectionState.disconnected) {
-          debugPrint('[WS] App resumed, reconnecting...');
-          _reconnectAttempts = 0; // 前台回来重置重连计数
-          connect();
-        } else if (isConnected) {
-          // 已连接时恢复心跳
-          _startHeartbeat();
-        }
+        _ws.onAppResumed();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        // 进入后台，保持连接但停止心跳（省电）
-        _pingTimer?.cancel();
-        _pongTimeoutTimer?.cancel();
+        _ws.onAppPaused();
         break;
       default:
         break;
@@ -206,9 +148,29 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // ===== 历史消息 =====
 
+  /// 从本地缓存加载聊天记录（用于瞬间显示）
+  Future<void> loadFromCache() async {
+    if (_handler.messages.isNotEmpty) return;
+    try {
+      final cached = await StorageUtil.getChatCache();
+      if (cached != null && cached.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(cached);
+        _handler.setMessages(
+          list.map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>)).toList(),
+        );
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[Chat] loadFromCache error: $e');
+    }
+  }
+
   /// 加载历史消息
   Future<void> loadHistory() async {
     if (_isLoading) return;
+
+    await loadFromCache();
+
     _isLoading = true;
     notifyListeners();
 
@@ -219,15 +181,11 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
               .toList() ??
           [];
 
-      _messages = list;
-      _messageIds.clear();
-      for (final msg in list) {
-        if (msg.id != null) _messageIds.add(msg.id!);
-      }
-      _hasMore = data['has_more'] == true;
+      _handler.setMessages(list);
+      _handler.hasMore = data['has_more'] == true;
 
-      // 加载完成后，标记最新消息为已读
       _saveLastReadId();
+      _saveChatCacheAsync();
     } catch (e) {
       debugPrint('[WS] loadHistory error: $e');
     } finally {
@@ -236,14 +194,21 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 清空本地聊天记录
+  void clearMessages() {
+    _handler.clearMessages();
+    StorageUtil.clearChatCache();
+    notifyListeners();
+  }
+
   /// 加载更早的消息
   Future<void> loadMore() async {
-    if (_isLoading || !_hasMore || _messages.isEmpty) return;
+    if (_isLoading || !_handler.hasMore || _handler.messages.isEmpty) return;
     _isLoading = true;
     notifyListeners();
 
     try {
-      final firstId = _messages.first.id;
+      final firstId = _handler.messages.first.id;
       if (firstId == null) return;
 
       final data = await _chatService.getHistory(beforeId: firstId, limit: 50);
@@ -252,17 +217,8 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
               .toList() ??
           [];
 
-      // 去重后插入
-      final newMessages = list.where((msg) {
-        if (msg.id == null) return true;
-        return !_messageIds.contains(msg.id);
-      }).toList();
-
-      for (final msg in newMessages) {
-        if (msg.id != null) _messageIds.add(msg.id!);
-      }
-      _messages.insertAll(0, newMessages);
-      _hasMore = data['has_more'] == true;
+      _handler.insertMessagesAtStart(list);
+      _handler.hasMore = data['has_more'] == true;
     } catch (e) {
       debugPrint('[WS] loadMore error: $e');
     } finally {
@@ -271,179 +227,69 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  // ===== WebSocket 连接 =====
+  // ===== WebSocket 连接（委托给 WsChatManager） =====
 
-  /// 连接 WebSocket
-  Future<void> connect() async {
-    // 防止重复连接
-    if (_connectionState == WsConnectionState.connecting ||
-        _connectionState == WsConnectionState.connected ||
-        _connectionState == WsConnectionState.authenticated) {
-      debugPrint('[WS] Already connected/connecting, skip');
-      return;
-    }
+  Future<void> connect() => _ws.connect();
+  void disconnect() => _ws.disconnect();
+  void manualReconnect() => _ws.manualReconnect();
 
-    _manualDisconnect = false;
-    _setConnectionState(WsConnectionState.connecting);
-    debugPrint('[WS] Connecting to ${ApiConfig.wsUrl} (attempt #$_reconnectAttempts)...');
+  // ===== 外部消息 handler 注册（保持原有 API） =====
 
-    try {
-      _channel = WebSocketChannel.connect(
-        Uri.parse(ApiConfig.wsUrl),
-      );
-
-      // 等待连接就绪
-      await _channel!.ready;
-
-      _setConnectionState(WsConnectionState.connected);
-      _reconnectAttempts = 0; // 连接成功，重置重连计数
-      _lastPongTime = DateTime.now();
-      debugPrint('[WS] Connected successfully');
-
-      // 监听消息流
-      _subscription = _channel!.stream.listen(
-        _handleMessage,
-        onError: (error) {
-          debugPrint('[WS] Stream error: $error');
-          _onDisconnected();
-        },
-        onDone: () {
-          debugPrint('[WS] Stream done (closeCode=${_channel?.closeCode}, reason=${_channel?.closeReason})');
-          _onDisconnected();
-        },
-        cancelOnError: false,
-      );
-
-      // 发送认证
-      await _authenticate();
-
-      // 启动心跳
-      _startHeartbeat();
-
-    } catch (e) {
-      debugPrint('[WS] Connect error: $e');
-      _setConnectionState(WsConnectionState.disconnected);
-      _scheduleReconnect();
-    }
+  void registerHandler(String type, void Function(Map<String, dynamic>) handler) {
+    _handler.registerHandler(type, handler);
   }
 
-  /// 主动断开连接
-  void disconnect() {
-    debugPrint('[WS] Manual disconnect');
-    _manualDisconnect = true;
-    _cleanup();
-    _setConnectionState(WsConnectionState.disconnected);
+  void removeHandler(String type, void Function(Map<String, dynamic>) handler) {
+    _handler.removeHandler(type, handler);
   }
 
-  /// 手动触发重连（UI 上的"重连"按钮）
-  void manualReconnect() {
-    debugPrint('[WS] Manual reconnect requested');
-    _cleanup();
-    _reconnectAttempts = 0;
-    _manualDisconnect = false;
-    connect();
-  }
+  // ===== 屏蔽用户 =====
 
-  // ===== 屏蔽用户列表 =====
-  final Set<int> _blockedUserIds = {};
-
-  Set<int> get blockedUserIds => _blockedUserIds;
-
-  /// 初始化屏蔽列表（从本地存储加载）
   Future<void> loadBlockedUsers() async {
     final list = await StorageUtil.getBlockedUsers();
     _blockedUserIds.clear();
     _blockedUserIds.addAll(list);
   }
 
-  /// 屏蔽用户
   Future<void> blockUser(int userId) async {
     _blockedUserIds.add(userId);
     await StorageUtil.addBlockedUser(userId);
-    // 上报服务端
     try {
       await _chatService.reportUser(userId, reason: 'blocked_by_user');
     } catch (_) {}
     notifyListeners();
   }
 
-  /// 取消屏蔽
   Future<void> unblockUser(int userId) async {
     _blockedUserIds.remove(userId);
     await StorageUtil.removeBlockedUser(userId);
     notifyListeners();
   }
 
-  /// 检查用户是否被屏蔽
   bool isUserBlocked(int userId) => _blockedUserIds.contains(userId);
 
-  /// 发送文本消息（带敏感词过滤）
-  void sendMessage(String content) {
-    final text = content.trim();
-    if (text.isEmpty) return;
+  // ===== 发送消息（委托给 ChatMessageSender） =====
 
-    // 客户端敏感词过滤
-    final filtered = ContentFilter.filter(text);
+  void sendMessage(String content) => _sender.sendMessage(content);
 
-    if (!isAuthenticated) {
-      if (isConnected || _connectionState == WsConnectionState.reconnecting) {
-        _pendingMessages.add(filtered);
-        debugPrint('[WS] Message queued (pending: ${_pendingMessages.length})');
-      } else {
-        debugPrint('[WS] Not connected, cannot send');
-      }
-      return;
-    }
-
-    _send({'type': 'message', 'content': filtered});
-  }
-
-  /// 发送多媒体消息（图片/视频/语音）
   void sendMediaMessage({
     required String msgType,
     required String mediaUrl,
     String thumbUrl = '',
     String content = '',
     Map<String, dynamic>? mediaInfo,
-  }) {
-    if (!isAuthenticated) {
-      debugPrint('[WS] Not authenticated, cannot send media');
-      return;
-    }
+  }) =>
+      _sender.sendMediaMessage(
+        msgType: msgType,
+        mediaUrl: mediaUrl,
+        thumbUrl: thumbUrl,
+        content: content,
+        mediaInfo: mediaInfo,
+      );
 
-    final data = <String, dynamic>{
-      'type': 'message',
-      'msg_type': msgType,
-      'content': content,
-      'media_url': mediaUrl,
-      'thumb_url': thumbUrl,
-    };
-    if (mediaInfo != null) {
-      data['media_info'] = mediaInfo;
-    }
-    _send(data);
-  }
+  void sendPrivateMessage(int toUserId, String content) =>
+      _sender.sendPrivateMessage(toUserId, content);
 
-  /// 发送私聊文本消息
-  void sendPrivateMessage(int toUserId, String content) {
-    final text = content.trim();
-    if (text.isEmpty) return;
-
-    final filtered = ContentFilter.filter(text);
-
-    if (!isAuthenticated) {
-      debugPrint('[WS] Not authenticated, cannot send private message');
-      return;
-    }
-
-    _send({
-      'type': 'private_message',
-      'to_id': toUserId,
-      'content': filtered,
-    });
-  }
-
-  /// 发送私聊多媒体消息
   void sendPrivateMediaMessage({
     required int toUserId,
     required String msgType,
@@ -451,46 +297,19 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     String thumbUrl = '',
     String content = '',
     Map<String, dynamic>? mediaInfo,
-  }) {
-    if (!isAuthenticated) {
-      debugPrint('[WS] Not authenticated, cannot send private media');
-      return;
-    }
+  }) =>
+      _sender.sendPrivateMediaMessage(
+        toUserId: toUserId,
+        msgType: msgType,
+        mediaUrl: mediaUrl,
+        thumbUrl: thumbUrl,
+        content: content,
+        mediaInfo: mediaInfo,
+      );
 
-    final data = <String, dynamic>{
-      'type': 'private_message',
-      'to_id': toUserId,
-      'msg_type': msgType,
-      'content': content,
-      'media_url': mediaUrl,
-      'thumb_url': thumbUrl,
-    };
-    if (mediaInfo != null) {
-      data['media_info'] = mediaInfo;
-    }
-    _send(data);
-  }
+  void sendGroupMessage(int groupId, String content) =>
+      _sender.sendGroupMessage(groupId, content);
 
-  /// 发送群聊文本消息
-  void sendGroupMessage(int groupId, String content) {
-    final text = content.trim();
-    if (text.isEmpty) return;
-
-    final filtered = ContentFilter.filter(text);
-
-    if (!isAuthenticated) {
-      debugPrint('[WS] Not authenticated, cannot send group message');
-      return;
-    }
-
-    _send({
-      'type': 'group_message',
-      'group_id': groupId,
-      'content': filtered,
-    });
-  }
-
-  /// 发送群聊多媒体消息
   void sendGroupMediaMessage({
     required int groupId,
     required String msgType,
@@ -498,262 +317,58 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     String thumbUrl = '',
     String content = '',
     Map<String, dynamic>? mediaInfo,
-  }) {
-    if (!isAuthenticated) {
-      debugPrint('[WS] Not authenticated, cannot send group media');
-      return;
-    }
+  }) =>
+      _sender.sendGroupMediaMessage(
+        groupId: groupId,
+        msgType: msgType,
+        mediaUrl: mediaUrl,
+        thumbUrl: thumbUrl,
+        content: content,
+        mediaInfo: mediaInfo,
+      );
 
-    final data = <String, dynamic>{
-      'type': 'group_message',
-      'group_id': groupId,
-      'msg_type': msgType,
-      'content': content,
-      'media_url': mediaUrl,
-      'thumb_url': thumbUrl,
-    };
-    if (mediaInfo != null) {
-      data['media_info'] = mediaInfo;
-    }
-    _send(data);
+  void sendRedPacketMessage(int redPacketId) =>
+      _sender.sendRedPacketMessage(redPacketId);
+
+  void sendPrivateRedPacketMessage(int toUserId, int redPacketId) =>
+      _sender.sendPrivateRedPacketMessage(toUserId, redPacketId);
+
+  void sendGroupRedPacketMessage(int groupId, int redPacketId) =>
+      _sender.sendGroupRedPacketMessage(groupId, redPacketId);
+
+  // ===== 内部回调 =====
+
+  /// WsChatManager 收到业务消息时的回调
+  void _onWsMessage(Map<String, dynamic> data) {
+    _handler.handleMessage(data);
   }
 
-  // ===== 内部方法 =====
-
-  void _setConnectionState(WsConnectionState state) {
-    if (_connectionState == state) return;
-    _connectionState = state;
+  /// WsChatManager 连接状态变化时的回调
+  void _onWsStateChanged(WsConnectionState state) {
     notifyListeners();
   }
 
-  /// 认证
-  Future<void> _authenticate() async {
-    final token = await StorageUtil.getToken();
-    if (token == null || token.isEmpty) {
-      debugPrint('[WS] No token, skip auth');
-      return;
-    }
+  // ===== 缓存 & 已读 =====
 
-    _send({'type': 'auth', 'token': token});
-
-    // 认证超时检测：如果 N 秒内没收到 auth_success，不影响浏览
-    Timer(Duration(seconds: _authTimeoutSec), () {
-      if (_connectionState == WsConnectionState.connected) {
-        debugPrint('[WS] Auth timeout, staying as connected (read-only)');
-      }
-    });
-  }
-
-  /// 启动心跳
-  void _startHeartbeat() {
-    _pingTimer?.cancel();
-    _pongTimeoutTimer?.cancel();
-
-    _pingTimer = Timer.periodic(
-      const Duration(seconds: _pingIntervalSec),
-      (_) {
-        if (!isConnected) return;
-
-        _send({'type': 'ping'});
-
-        // 启动 pong 超时检测
-        _pongTimeoutTimer?.cancel();
-        _pongTimeoutTimer = Timer(
-          const Duration(seconds: _pongTimeoutSec),
-          () {
-            debugPrint('[WS] Pong timeout! Last pong: $_lastPongTime');
-            // Pong 超时，认为连接已断开
-            _onDisconnected();
-          },
-        );
-      },
-    );
-  }
-
-  /// 发送待发送队列中的消息
-  void _flushPendingMessages() {
-    if (_pendingMessages.isEmpty || !isAuthenticated) return;
-
-    debugPrint('[WS] Flushing ${_pendingMessages.length} pending messages');
-    final pending = List<String>.from(_pendingMessages);
-    _pendingMessages.clear();
-
-    for (final text in pending) {
-      _send({'type': 'message', 'content': text});
-    }
-  }
-
-  /// 连接断开处理
-  void _onDisconnected() {
-    _cleanup();
-    _setConnectionState(WsConnectionState.disconnected);
-
-    if (!_manualDisconnect) {
-      _scheduleReconnect();
-    }
-  }
-
-  /// 计算指数退避延迟
-  int _getReconnectDelay() {
-    // 指数退避 + 随机抖动: baseDelay * 2^attempt + random(0~1s)
-    final exponential = _baseReconnectDelaySec * pow(2, _reconnectAttempts.clamp(0, 6));
-    final delay = min(exponential.toInt(), _maxReconnectDelaySec);
-    final jitter = Random().nextInt(1000); // 0~1000ms 随机抖动，避免惊群
-    return delay * 1000 + jitter; // 返回毫秒
-  }
-
-  /// 调度重连
-  void _scheduleReconnect() {
-    _reconnectTimer?.cancel();
-
-    if (_manualDisconnect) {
-      debugPrint('[WS] Manual disconnect, skip reconnect');
-      return;
-    }
-
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      debugPrint('[WS] Max reconnect attempts reached ($_maxReconnectAttempts), giving up');
-      _setConnectionState(WsConnectionState.disconnected);
-      return;
-    }
-
-    final delayMs = _getReconnectDelay();
-    _reconnectAttempts++;
-    _setConnectionState(WsConnectionState.reconnecting);
-    debugPrint('[WS] Reconnecting in ${delayMs}ms (attempt #$_reconnectAttempts/$_maxReconnectAttempts)');
-
-    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
-      connect();
-    });
-  }
-
-  /// 清理所有连接资源（不清除消息和待发队列）
-  void _cleanup() {
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    _pongTimeoutTimer?.cancel();
-    _pongTimeoutTimer = null;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    _subscription?.cancel();
-    _subscription = null;
-
+  void _saveChatCacheAsync() {
     try {
-      _channel?.sink.close();
+      final jsonStr = jsonEncode(_handler.messages.map((m) => m.toJson()).toList());
+      StorageUtil.saveChatCache(jsonStr);
     } catch (e) {
-      // ignore close error
-    }
-    _channel = null;
-  }
-
-  /// 发送 JSON 消息
-  void _send(Map<String, dynamic> data) {
-    try {
-      if (_channel != null) {
-        _channel!.sink.add(jsonEncode(data));
-      }
-    } catch (e) {
-      debugPrint('[WS] Send error: $e');
-      // 发送失败可能是连接已断，触发重连
-      _onDisconnected();
+      debugPrint('[Chat] saveChatCache error: $e');
     }
   }
 
-  /// 处理收到的消息
-  void _handleMessage(dynamic rawData) {
-    try {
-      final data = jsonDecode(rawData as String) as Map<String, dynamic>;
-      final type = data['type'];
-
-      switch (type) {
-        case 'message':
-          final msg = ChatMessageModel.fromJson(data);
-
-          // 去重：防止重连后收到重复消息
-          if (msg.id != null && _messageIds.contains(msg.id)) {
-            debugPrint('[WS] Duplicate message id=${msg.id}, skip');
-            break;
-          }
-          if (msg.id != null) _messageIds.add(msg.id!);
-
-          _messages.add(msg);
-
-          // 限制内存中的消息数量
-          if (_messages.length > _maxMessageCacheSize) {
-            final removed = _messages.removeAt(0);
-            if (removed.id != null) _messageIds.remove(removed.id);
-            _hasMore = true; // 移除了旧消息，意味着可以加载更多
-          }
-
-          // 聊天页面打开时实时更新已读位置
-          if (_pageRefCount > 0) {
-            _saveLastReadId();
-          }
-
-          notifyListeners();
+  Future<void> _saveLastReadId() async {
+    final msgs = _handler.messages;
+    if (msgs.isNotEmpty) {
+      for (var i = msgs.length - 1; i >= 0; i--) {
+        final id = msgs[i].id;
+        if (id != null && id > 0) {
+          await StorageUtil.saveLastReadChatId(id);
           break;
-
-        case 'online_count':
-          _onlineCount = data['online_count'] ?? 0;
-          notifyListeners();
-          break;
-
-        case 'auth_success':
-          _setConnectionState(WsConnectionState.authenticated);
-          debugPrint('[WS] Authenticated: ${data['user']?['nickname']}');
-          // 认证成功后，发送待发送队列中的消息
-          _flushPendingMessages();
-          break;
-
-        case 'auth_fail':
-          debugPrint('[WS] Auth failed: ${data['msg']}');
-          // 保持 connected 状态，用户可以浏览但不能发送
-          break;
-
-        case 'pong':
-          _lastPongTime = DateTime.now();
-          _pongTimeoutTimer?.cancel(); // 收到 pong，取消超时
-          break;
-
-        case 'error':
-          debugPrint('[WS] Server error: ${data['msg']}');
-          break;
-
-        // ===== 好友 & 私聊 & 群聊 新消息类型 =====
-        case 'friend_request':     // 收到好友请求通知
-        case 'friend_accepted':    // 好友请求被接受通知
-        case 'private_message':    // 收到私聊消息
-        case 'group_message':      // 收到群消息
-          debugPrint('[WS] Dispatching $type to external handlers');
-          final handlers = _externalHandlers[type];
-          if (handlers != null) {
-            for (final handler in handlers) {
-              try {
-                handler(data);
-              } catch (e) {
-                debugPrint('[WS] External handler error for $type: $e');
-              }
-            }
-          }
-          break;
-
-        default:
-          debugPrint('[WS] Unknown message type: $type');
-          // 尝试分发到外部 handler（支持未来扩展）
-          final fallbackHandlers = _externalHandlers[type];
-          if (fallbackHandlers != null) {
-            for (final handler in fallbackHandlers) {
-              try {
-                handler(data);
-              } catch (e) {
-                debugPrint('[WS] External handler error for $type: $e');
-              }
-            }
-          }
-          break;
+        }
       }
-    } catch (e) {
-      debugPrint('[WS] Parse error: $e');
     }
   }
 }

@@ -26,8 +26,6 @@ class AppTheme {
   static const Color petBg = Color(0xFFFEF3C7);
   static const Color elderColor = Color(0xFF3B82F6);
   static const Color elderBg = Color(0xFFDBEAFE);
-  static const Color childColor = Color(0xFFEF4444);
-  static const Color childBg = Color(0xFFFEE2E2);
   static const Color otherColor = Color(0xFF8B5CF6);
   static const Color otherBg = Color(0xFFEDE9FE);
 
@@ -38,7 +36,6 @@ class AppTheme {
     switch (category) {
       case 1: return petColor;
       case 2: return elderColor;
-      case 3: return childColor;
       case 4: return otherColor;
       default: return primaryColor;
     }
@@ -48,7 +45,6 @@ class AppTheme {
     switch (category) {
       case 1: return petBg;
       case 2: return elderBg;
-      case 3: return childBg;
       case 4: return otherBg;
       default: return primaryLight;
     }
@@ -58,7 +54,6 @@ class AppTheme {
     switch (category) {
       case 1: return Icons.pets;
       case 2: return Icons.elderly;
-      case 3: return Icons.child_care;
       case 4: return Icons.inventory_2_outlined;
       default: return Icons.help_outline;
     }
@@ -67,8 +62,7 @@ class AppTheme {
   static String getCategoryName(int category) {
     switch (category) {
       case 1: return '宠物';
-      case 2: return '成年人';
-      case 3: return '儿童';
+      case 2: return '亲人';
       case 4: return '其它物品';
       default: return '未知';
     }

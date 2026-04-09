@@ -144,6 +144,41 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
+  /// 删除全部已读通知
+  Future<void> _deleteAll() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('清空通知'),
+        content: const Text('确定删除全部已读通知？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除', style: TextStyle(color: AppTheme.dangerColor)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final res = await _notificationService.deleteAll();
+    if (res['code'] == 0 && mounted) {
+      setState(() {
+        _notifications.removeWhere((n) => !n.isUnread);
+      });
+      // 如果全部都被删了，显示空状态
+      if (_notifications.isEmpty) {
+        setState(() {
+          _hasMore = false;
+        });
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已清空'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+
   /// 点击通知
   void _onTapNotification(int index) async {
     final notification = _notifications[index];
@@ -187,6 +222,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
             TextButton(
               onPressed: _markAllRead,
               child: const Text('全部已读', style: TextStyle(fontSize: 13)),
+            )
+          else if (_notifications.isNotEmpty)
+            TextButton(
+              onPressed: _deleteAll,
+              child: const Text('全部删除', style: TextStyle(fontSize: 13, color: AppTheme.dangerColor)),
             ),
         ],
       ),
@@ -398,7 +438,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           const SizedBox(height: 20),
           const Text('暂无通知', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
-          const Text('启事审核结果和线索回复将在这里通知你', style: TextStyle(fontSize: 13, color: AppTheme.textHint)),
+          const Text('启事审核结果和消息回复将在这里通知你', style: TextStyle(fontSize: 13, color: AppTheme.textHint)),
         ],
       ),
     );

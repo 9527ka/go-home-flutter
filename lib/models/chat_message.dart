@@ -4,6 +4,7 @@ enum ChatMsgType {
   image,
   video,
   voice,
+  redPacket,
 }
 
 class ChatMessageModel {
@@ -40,10 +41,10 @@ class ChatMessageModel {
     final user = json['user'] as Map<String, dynamic>?;
     return ChatMessageModel(
       id: json['id'],
-      userId: json['user_id'] ?? user?['id'] ?? 0,
+      userId: json['user_id'] ?? json['from_id'] ?? user?['id'] ?? 0,
       userCode: json['user_code'] ?? user?['user_code'] ?? '',
-      nickname: json['nickname'] ?? user?['nickname'] ?? '',
-      avatar: json['avatar'] ?? user?['avatar'] ?? '',
+      nickname: json['nickname'] ?? json['from_nickname'] ?? user?['nickname'] ?? '',
+      avatar: json['avatar'] ?? json['from_avatar'] ?? user?['avatar'] ?? '',
       msgType: _parseMsgType(json['msg_type']),
       content: json['content'] ?? '',
       mediaUrl: json['media_url'] ?? '',
@@ -64,6 +65,8 @@ class ChatMessageModel {
           return ChatMsgType.video;
         case 'voice':
           return ChatMsgType.voice;
+        case 'red_packet':
+          return ChatMsgType.redPacket;
         default:
           return ChatMsgType.text;
       }
@@ -79,10 +82,26 @@ class ChatMessageModel {
         return 'video';
       case ChatMsgType.voice:
         return 'voice';
+      case ChatMsgType.redPacket:
+        return 'red_packet';
       case ChatMsgType.text:
         return 'text';
     }
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'user_id': userId,
+    'user_code': userCode,
+    'nickname': nickname,
+    'avatar': avatar,
+    'msg_type': msgTypeStr,
+    'content': content,
+    'media_url': mediaUrl,
+    'thumb_url': thumbUrl,
+    'media_info': mediaInfo,
+    'created_at': createdAt,
+  };
 
   /// 语音消息时长（秒）
   int get voiceDuration => mediaInfo?['duration'] ?? 0;

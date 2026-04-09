@@ -18,6 +18,7 @@ import '../pages/profile/edit_profile_page.dart';
 import '../pages/profile/feedback_page.dart';
 import '../pages/profile/account_settings_page.dart';
 import '../pages/chat/chat_page.dart';
+import '../pages/chat/chat_room_detail_page.dart';
 import '../pages/chat/conversation_list_page.dart';
 import '../pages/chat/blocked_users_page.dart';
 import '../pages/chat/private_chat_page.dart';
@@ -27,6 +28,12 @@ import '../pages/friend/friend_search_page.dart';
 import '../pages/group/group_create_page.dart';
 import '../pages/group/group_chat_page.dart';
 import '../pages/group/group_detail_page.dart';
+import '../pages/wallet/wallet_page.dart';
+import '../pages/wallet/recharge_page.dart';
+import '../pages/wallet/withdraw_page.dart';
+import '../pages/wallet/transaction_history_page.dart';
+import '../pages/wallet/red_packet_detail_page.dart';
+import '../pages/sign/sign_page.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -47,11 +54,12 @@ class AppRoutes {
   static const String feedback = '/feedback';
   static const String accountSettings = '/account-settings';
   static const String chatRoom = '/chat';
+  static const String chatRoomDetail = '/chat/detail';
   static const String conversations = '/conversations';
   static const String blockedUsers = '/blocked-users';
   static const String privateChat = '/private-chat';
 
-  // HIDDEN_FEATURE: 好友相关路由（路由保留防崩溃，入口已隐藏）
+  // 好友相关路由
   static const String friendListPage = '/friends';
   static const String friendRequests = '/friend-requests';
   static const String friendSearch = '/friend-search';
@@ -60,6 +68,16 @@ class AppRoutes {
   static const String groupCreate = '/group/create';
   static const String groupChat = '/group/chat';
   static const String groupDetail = '/group/detail';
+
+  // 签到
+  static const String signIn = '/sign-in';
+
+  // 爱心中心
+  static const String wallet = '/wallet';
+  static const String walletRecharge = '/wallet/recharge';
+  static const String walletWithdraw = '/wallet/withdraw';
+  static const String walletTransactions = '/wallet/transactions';
+  static const String redPacketDetail = '/red-packet/detail';
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (_) => const SplashPage(),
@@ -78,6 +96,7 @@ class AppRoutes {
         feedback: (_) => const FeedbackPage(),
         accountSettings: (_) => const AccountSettingsPage(),
         chatRoom: (_) => const ChatPage(),
+        chatRoomDetail: (_) => const ChatRoomDetailPage(),
         conversations: (_) => const ConversationListPage(),
         blockedUsers: (_) => const BlockedUsersPage(),
         // 好友
@@ -86,6 +105,13 @@ class AppRoutes {
         friendSearch: (_) => const FriendSearchPage(),
         // 群组
         groupCreate: (_) => const GroupCreatePage(),
+        // 签到
+        signIn: (_) => const SignPage(),
+        // 爱心中心
+        wallet: (_) => const WalletPage(),
+        walletRecharge: (_) => const RechargePage(),
+        walletWithdraw: (_) => const WithdrawPage(),
+        walletTransactions: (_) => const TransactionHistoryPage(),
       };
 
   /// 需要传参的页面，用 onGenerateRoute
@@ -109,6 +135,7 @@ class AppRoutes {
           friendId: args['friendId'] as int,
           friendName: args['friendName'] as String,
           friendAvatar: args['friendAvatar'] as String? ?? '',
+          friendUserCode: args['friendUserCode'] as String? ?? '',
         ),
       );
     }
@@ -122,6 +149,12 @@ class AppRoutes {
       final groupId = settings.arguments as int;
       return MaterialPageRoute(
         builder: (_) => GroupDetailPage(groupId: groupId),
+      );
+    }
+    if (settings.name == redPacketDetail) {
+      final redPacketId = settings.arguments as int;
+      return MaterialPageRoute(
+        builder: (_) => RedPacketDetailPage(redPacketId: redPacketId),
       );
     }
     return null;

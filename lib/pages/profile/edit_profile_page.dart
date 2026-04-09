@@ -1,4 +1,7 @@
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
@@ -6,28 +9,9 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/upload_service.dart';
-
-/// 系统预设头像配置
-class _SystemAvatar {
-  final String path;
-  final Color color;
-  final IconData icon;
-
-  const _SystemAvatar({required this.path, required this.color, required this.icon});
-}
-
-const _systemAvatars = <_SystemAvatar>[
-  _SystemAvatar(path: '/system/avatars/avatar_1.svg', color: Color(0xFF4A90D9), icon: Icons.person),
-  _SystemAvatar(path: '/system/avatars/avatar_2.svg', color: Color(0xFF5BA0E8), icon: Icons.person_outline),
-  _SystemAvatar(path: '/system/avatars/avatar_3.svg', color: Color(0xFF34A853), icon: Icons.face),
-  _SystemAvatar(path: '/system/avatars/avatar_4.svg', color: Color(0xFF8B5CF6), icon: Icons.sentiment_satisfied_alt),
-  _SystemAvatar(path: '/system/avatars/avatar_5.svg', color: Color(0xFFF97316), icon: Icons.emoji_people),
-  _SystemAvatar(path: '/system/avatars/avatar_6.svg', color: Color(0xFFEC4899), icon: Icons.face_3),
-  _SystemAvatar(path: '/system/avatars/avatar_7.svg', color: Color(0xFFF43F5E), icon: Icons.face_4),
-  _SystemAvatar(path: '/system/avatars/avatar_8.svg', color: Color(0xFFA855F7), icon: Icons.face_2),
-  _SystemAvatar(path: '/system/avatars/avatar_9.svg', color: Color(0xFF06B6D4), icon: Icons.face_5),
-  _SystemAvatar(path: '/system/avatars/avatar_10.svg', color: Color(0xFFEAB308), icon: Icons.face_6),
-];
+import '../../utils/url_helper.dart';
+import '../../widgets/profile/avatar_source_picker.dart';
+import '../../widgets/profile/system_avatar_picker.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -43,6 +27,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _picker = ImagePicker();
 
   String? _avatarUrl;
+  String? _localAvatarPath;
   bool _isSaving = false;
   bool _isUploading = false;
 
@@ -62,188 +47,93 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.dispose();
   }
 
-  /// 选择头像（三种方式）
+  /// Pick avatar from three sources.
   Future<void> _pickAvatar() async {
     final l = AppLocalizations.of(context)!;
 
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.dividerColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.emoji_emotions_outlined, color: AppTheme.warningColor),
-              title: Text(l.get('system_avatar')),
-              onTap: () => Navigator.pop(ctx, 'system'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined, color: AppTheme.primaryColor),
-              title: Text(l.get('take_photo')),
-              onTap: () => Navigator.pop(ctx, 'camera'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: AppTheme.primaryColor),
-              title: Text(l.get('choose_from_album')),
-              onTap: () => Navigator.pop(ctx, 'gallery'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-
+    final choice = await AvatarSourcePicker.show(context);
     if (choice == null) return;
 
-    if (choice == 'system') {
-      _showSystemAvatarPicker();
+    if (choice == AvatarSource.system) {
+      SystemAvatarPicker.show(
+        context,
+        currentAvatarUrl: _avatarUrl,
+        onSelected: (path) {
+          setState(() {
+            _avatarUrl = path;
+            _localAvatarPath = null;
+          });
+        },
+      );
       return;
     }
 
-    final source = choice == 'camera' ? ImageSource.camera : ImageSource.gallery;
+    final source = choice == AvatarSource.camera ? ImageSource.camera : ImageSource.gallery;
 
     try {
-      final xFile = await _picker.pickImage(
-        source: source,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
-      );
+      final xFile = await _picker.pickImage(source: source);
       if (xFile == null) return;
 
-      setState(() => _isUploading = true);
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: xFile.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        maxWidth: 512,
+        maxHeight: 512,
+        compressQuality: 80,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: l.get('crop_avatar'),
+            toolbarColor: AppTheme.primaryColor,
+            toolbarWidgetColor: Colors.white,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: l.get('crop_avatar'),
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+      if (croppedFile == null) return;
 
-      final url = await _uploadService.uploadXFile(xFile);
-      if (url != null && mounted) {
+      setState(() {
+        _isUploading = true;
+        _localAvatarPath = croppedFile.path;
+      });
+
+      final url = await _uploadService.uploadXFile(XFile(croppedFile.path));
+      if (mounted) {
         setState(() {
           _avatarUrl = url;
           _isUploading = false;
         });
-      } else {
-        if (mounted) {
-          setState(() => _isUploading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l.get('upload_failed')),
-              backgroundColor: AppTheme.dangerColor,
-            ),
-          );
-        }
       }
     } catch (e) {
+      debugPrint('[EditProfile] avatar upload error: $e');
       if (mounted) {
-        setState(() => _isUploading = false);
+        setState(() {
+          _isUploading = false;
+          _localAvatarPath = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${l.get('upload_failed')}: $e'),
+            backgroundColor: AppTheme.dangerColor,
+          ),
+        );
       }
     }
   }
 
-  /// 显示系统头像选择弹窗
-  void _showSystemAvatarPicker() {
-    final l = AppLocalizations.of(context)!;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 拖拽条
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.dividerColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                l.get('select_system_avatar'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 20),
-              // 头像网格 - 5列2行
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 5,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                ),
-                itemCount: _systemAvatars.length,
-                itemBuilder: (_, index) {
-                  final avatar = _systemAvatars[index];
-                  final isSelected = _avatarUrl == avatar.path;
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _avatarUrl = avatar.path;
-                      });
-                      Navigator.pop(ctx);
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: avatar.color.withOpacity(0.15),
-                        shape: BoxShape.circle,
-                        border: isSelected
-                            ? Border.all(color: avatar.color, width: 3)
-                            : null,
-                        boxShadow: isSelected
-                            ? [BoxShadow(color: avatar.color.withOpacity(0.3), blurRadius: 8)]
-                            : null,
-                      ),
-                      child: Center(
-                        child: Icon(
-                          avatar.icon,
-                          size: 28,
-                          color: avatar.color,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 判断是否为系统头像路径
+  /// Whether the current avatar is a system avatar.
   bool get _isSystemAvatar =>
       _avatarUrl != null && _avatarUrl!.startsWith('/system/avatars/');
 
-  /// 获取系统头像配置
-  _SystemAvatar? get _currentSystemAvatar {
+  /// Get the current system avatar configuration.
+  SystemAvatar? get _currentSystemAvatar {
     if (!_isSystemAvatar) return null;
     try {
-      return _systemAvatars.firstWhere((a) => a.path == _avatarUrl);
+      return systemAvatars.firstWhere((a) => a.path == _avatarUrl);
     } catch (_) {
       return null;
     }
@@ -274,7 +164,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       if (!mounted) return;
 
       if (res['code'] == 0) {
-        // 更新本地状态
         await context.read<AuthProvider>().refreshProfile();
 
         if (mounted) {
@@ -328,13 +217,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
           children: [
             const SizedBox(height: 16),
 
-            // ===== 头像 =====
+            // ===== Avatar =====
             GestureDetector(
               onTap: _isUploading ? null : _pickAvatar,
               child: Stack(
                 children: [
                   _buildAvatarPreview(user),
-                  // 上传中
                   if (_isUploading)
                     Positioned.fill(
                       child: Container(
@@ -354,7 +242,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         ),
                       ),
                     ),
-                  // 编辑图标
                   if (!_isUploading)
                     Positioned(
                       right: 0,
@@ -382,7 +269,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
             const SizedBox(height: 36),
 
-            // ===== 昵称 =====
+            // ===== Nickname =====
             Container(
               decoration: BoxDecoration(
                 color: AppTheme.cardBg,
@@ -425,7 +312,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
             const SizedBox(height: 36),
 
-            // ===== 保存按钮 =====
+            // ===== Save button =====
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -463,12 +350,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  /// 头像预览：系统头像用图标显示，自定义头像用网络图片
+  /// Avatar preview: system avatar shows icon, custom avatar shows network image.
   Widget _buildAvatarPreview(dynamic user) {
     final sysAvatar = _currentSystemAvatar;
 
     if (sysAvatar != null) {
-      // 系统头像：显示彩色图标
       return Container(
         width: 96,
         height: 96,
@@ -493,7 +379,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
     }
 
-    // 自定义头像或默认
+    ImageProvider? imageProvider;
+    if (_localAvatarPath != null && _localAvatarPath!.isNotEmpty && !kIsWeb) {
+      imageProvider = FileImage(File(_localAvatarPath!));
+    } else if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+      final absUrl = UrlHelper.ensureAbsolute(_avatarUrl!);
+      if (UrlHelper.isValidNetworkUrl(absUrl)) {
+        imageProvider = NetworkImage(absUrl);
+      }
+    }
+
     return Container(
       width: 96,
       height: 96,
@@ -507,14 +402,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
             offset: const Offset(0, 4),
           ),
         ],
-        image: _avatarUrl != null && _avatarUrl!.isNotEmpty
+        image: imageProvider != null
             ? DecorationImage(
-                image: NetworkImage(_avatarUrl!),
+                image: imageProvider,
                 fit: BoxFit.cover,
               )
             : null,
       ),
-      child: _avatarUrl == null || _avatarUrl!.isEmpty
+      child: imageProvider == null
           ? Center(
               child: Text(
                 user?.nickname.isNotEmpty == true

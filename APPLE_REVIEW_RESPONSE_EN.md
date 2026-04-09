@@ -61,7 +61,7 @@ We currently have **NOT** established formal partnerships with any law enforceme
 - All information posted by users is voluntarily provided; we do not verify identities or conduct case investigations
 
 **Test Data Source:**
-- The current test data in the app is sourced from the "110 Missing Persons Network" (110寻人网) platform
+- The current test data in the app is sourced from the "110 Missing Persons Network" (110寻亲网) platform
 - All information represents **real and valid missing person cases**
 - We collect publicly available information to demonstrate platform functionality
 

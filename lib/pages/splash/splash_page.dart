@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/friend_provider.dart';
+import '../../widgets/privacy_consent_dialog.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -20,6 +22,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   late AnimationController _animCtrl;
   late Animation<double> _fadeIn;
   late Animation<double> _slideUp;
+  bool _needsPrivacyConsent = false;
 
   @override
   void initState() {
@@ -44,8 +47,27 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
     if (!mounted) return;
 
-    // Auth 就绪后，提前预加载首页数据（不阻塞跳转）
-    context.read<PostProvider>().refresh();
+    // 首次启动隐私协议弹窗
+    final agreed = await PrivacyConsentDialog.hasAgreed();
+    if (!agreed) {
+      if (!mounted) return;
+      final consent = await PrivacyConsentDialog.show(context);
+      if (!consent) {
+        // 用户拒绝，停留在启动页并显示提示
+        if (mounted) setState(() => _needsPrivacyConsent = true);
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    _proceedToHome(authProvider);
+  }
+
+  void _proceedToHome(AuthProvider authProvider) {
+    // 先从缓存加载文章列表（瞬间显示），再从 API 刷新
+    final postProvider = context.read<PostProvider>();
+    postProvider.loadFromCache();
+    postProvider.refresh();
 
     // 仅登录用户才预加载需要鉴权的数据（游客调用会触发 401）
     if (authProvider.isLoggedIn) {
@@ -60,6 +82,15 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
     // 跳转首页
     Navigator.pushReplacementNamed(context, AppRoutes.home);
+  }
+
+  /// 用户拒绝后，点击"重新查看"再次弹出隐私弹窗
+  Future<void> _retryConsent() async {
+    final consent = await PrivacyConsentDialog.show(context);
+    if (consent && mounted) {
+      setState(() => _needsPrivacyConsent = false);
+      _proceedToHome(context.read<AuthProvider>());
+    }
   }
 
   /// 等待 AuthProvider 初始化完成（最多等 2 秒，超时也跳转）
@@ -134,11 +165,32 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                     style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.85), letterSpacing: 1),
                   ),
                   const SizedBox(height: 48),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white.withOpacity(0.7)),
-                  ),
+                  if (!_needsPrivacyConsent)
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white.withOpacity(0.7)),
+                    ),
+                  // 用户拒绝隐私协议后显示提示和重试按钮
+                  if (_needsPrivacyConsent) ...[
+                    Text(
+                      AppLocalizations.of(context)?.get('privacy_dialog_disagree_msg') ?? '',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.85)),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _retryConsent,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(AppLocalizations.of(context)?.get('privacy_dialog_retry') ?? ''),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(color: Colors.white.withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      ),
+                    ),
+                  ],
                   const Spacer(flex: 4),
                   // 底部分类展示
                   Padding(
@@ -149,15 +201,17 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             _miniTag('宠物', AppTheme.petColor),
-                            const SizedBox(width: 12),
-                            _miniTag('成年人', AppTheme.elderColor),
-                            const SizedBox(width: 12),
-                            _miniTag('儿童', AppTheme.childColor),
+                            const SizedBox(width: 10),
+                            _miniTag('亲人', AppTheme.elderColor),
+                            const SizedBox(width: 10),
+                            _miniTag('物品', AppTheme.otherColor),
+                            const SizedBox(width: 10),
+                            _aiTag(),
                           ],
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          '寻宠 · 寻亲 · 寻人',
+                          'AI 驱动 · 寻宠 · 寻亲',
                           style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.6), letterSpacing: 2),
                         ),
                       ],
@@ -168,6 +222,27 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _aiTag() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [const Color(0xFF7C3AED).withOpacity(0.5), const Color(0xFF4A90D9).withOpacity(0.5)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.4)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome, size: 12, color: Colors.white),
+          SizedBox(width: 4),
+          Text('AI', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }

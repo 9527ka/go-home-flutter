@@ -38,7 +38,7 @@ class NotificationModel {
   /// 通知类型图标
   String get typeLabel {
     switch (type) {
-      case 1: return '线索回复';
+      case 1: return '消息回复';
       case 2: return '审核通过';
       case 3: return '审核驳回';
       case 4: return '举报处理';

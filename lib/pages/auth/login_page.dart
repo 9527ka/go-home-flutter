@@ -6,6 +6,7 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/locale_provider.dart';
 import '../../utils/validators.dart';
 import '../../widgets/eula_dialog.dart';
 
@@ -157,15 +158,17 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 60),
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 60),
 
                   // Logo + 标题区
                   Center(
@@ -429,7 +432,107 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
+        // 右上角语言切换按钮
+        Positioned(
+          top: 8,
+          right: 8,
+          child: _buildLanguageButton(context),
+        ),
+      ],
+    ),
+  ),
+);
+  }
+
+  Widget _buildLanguageButton(BuildContext context) {
+    final localeProvider = context.watch<LocaleProvider>();
+    final currentLocale = localeProvider.locale;
+    final flag = _getFlag(currentLocale);
+
+    return GestureDetector(
+      onTap: () => _showLanguagePicker(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppTheme.scaffoldBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppTheme.dividerColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(flag, style: const TextStyle(fontSize: 16)),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, size: 18, color: AppTheme.textSecondary),
+          ],
+        ),
       ),
     );
+  }
+
+  void _showLanguagePicker(BuildContext context) {
+    final localeProvider = context.read<LocaleProvider>();
+    final currentLocale = localeProvider.locale;
+
+    const languages = [
+      (locale: Locale('zh', 'CN'), name: '简体中文', flag: '🇨🇳'),
+      (locale: Locale('zh', 'TW'), name: '繁體中文', flag: '🇹🇼'),
+      (locale: Locale('en', 'US'), name: 'English', flag: '🇺🇸'),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      backgroundColor: AppTheme.cardBg,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...languages.map((lang) {
+              final isSelected = currentLocale.languageCode == lang.locale.languageCode &&
+                  currentLocale.countryCode == lang.locale.countryCode;
+              return ListTile(
+                leading: Text(lang.flag, style: const TextStyle(fontSize: 22)),
+                title: Text(
+                  lang.name,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                  ),
+                ),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: AppTheme.primaryColor, size: 22)
+                    : null,
+                onTap: () {
+                  localeProvider.setLocale(lang.locale);
+                  Navigator.pop(ctx);
+                },
+              );
+            }),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _getFlag(Locale locale) {
+    switch ('${locale.languageCode}_${locale.countryCode}') {
+      case 'zh_CN': return '🇨🇳';
+      case 'zh_TW': return '🇹🇼';
+      case 'en_US': return '🇺🇸';
+      default: return '🌐';
+    }
   }
 }

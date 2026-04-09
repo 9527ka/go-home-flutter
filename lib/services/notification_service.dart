@@ -38,4 +38,9 @@ class NotificationService {
     if (id != null) data['id'] = id;
     return await _http.post(ApiConfig.notificationRead, data: data);
   }
+
+  /// 删除全部已读通知
+  Future<Map<String, dynamic>> deleteAll() async {
+    return await _http.post(ApiConfig.notificationDeleteAll);
+  }
 }

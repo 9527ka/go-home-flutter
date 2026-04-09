@@ -1,12 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../config/theme.dart';
+import '../../providers/app_config_provider.dart';
 
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final about = context.watch<AppConfigProvider>().about;
+    final version = about['version'] ?? 'v1.0.0';
+    final telegram = about['telegram'] ?? '';
+    final websiteUrl = about['website_url'] ?? '';
+    final websiteName = about['website_name'] ?? '';
+    final mission = about['mission'] ?? '';
+    final safety = about['safety'] ?? '';
+    final freeService = about['free_service'] ?? '';
+    final disclaimer = about['disclaimer'] ?? '';
+    final privacy = about['privacy'] ?? '';
+
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
       appBar: AppBar(
@@ -26,108 +40,108 @@ class AboutPage extends StatelessWidget {
 
             const SizedBox(height: 36),
 
-            // ===== 功能介绍 =====
-            _buildSection(
-              context,
-              children: [
-                _buildInfoRow(
-                  icon: Icons.info_outline,
-                  iconColor: AppTheme.primaryColor,
-                  title: '版本号',
-                  value: '1.0.0',
-                ),
-                const Divider(indent: 52, height: 0.5),
-                _buildInfoRow(
-                  icon: Icons.update,
-                  iconColor: AppTheme.successColor,
-                  title: '构建版本',
-                  value: 'Build 1',
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
             // ===== 平台介绍 =====
-            _buildSection(
-              context,
-              children: [
-                _buildDescRow(
-                  icon: Icons.favorite_outline,
-                  iconColor: AppTheme.dangerColor,
-                  title: '平台宗旨',
-                  desc: '帮助每一个走失的生命找到回家的路。通过公众力量汇聚爱心线索，为走失成年人、儿童、宠物提供免费的信息发布与传播平台。',
-                ),
-                const Divider(indent: 52, height: 0.5),
-                _buildDescRow(
-                  icon: Icons.shield_outlined,
-                  iconColor: AppTheme.primaryColor,
-                  title: '安全保障',
-                  desc: '所有信息经过人工审核，儿童类信息隐藏精确地址。举报功能保障信息质量，保护用户隐私安全。',
-                ),
-                const Divider(indent: 52, height: 0.5),
-                _buildDescRow(
-                  icon: Icons.volunteer_activism_outlined,
-                  iconColor: AppTheme.accentColor,
-                  title: '公益免费',
-                  desc: '平台所有功能完全免费。发布启事、提供线索、分享传播，所有操作均不收取任何费用。',
-                ),
-              ],
-            ),
+            if (mission.isNotEmpty || safety.isNotEmpty || freeService.isNotEmpty)
+              _buildSection(
+                context,
+                children: [
+                  if (mission.isNotEmpty)
+                    _buildDescRow(
+                      icon: Icons.favorite_outline,
+                      iconColor: AppTheme.dangerColor,
+                      title: '平台宗旨',
+                      desc: mission,
+                    ),
+                  if (mission.isNotEmpty && safety.isNotEmpty)
+                    const Divider(indent: 52, height: 0.5),
+                  if (safety.isNotEmpty)
+                    _buildDescRow(
+                      icon: Icons.shield_outlined,
+                      iconColor: AppTheme.primaryColor,
+                      title: '安全保障',
+                      desc: safety,
+                    ),
+                  if (safety.isNotEmpty && freeService.isNotEmpty)
+                    const Divider(indent: 52, height: 0.5),
+                  if (freeService.isNotEmpty)
+                    _buildDescRow(
+                      icon: Icons.volunteer_activism_outlined,
+                      iconColor: AppTheme.accentColor,
+                      title: '公益免费',
+                      desc: freeService,
+                    ),
+                ],
+              ),
 
-            const SizedBox(height: 12),
+            if (mission.isNotEmpty || safety.isNotEmpty || freeService.isNotEmpty)
+              const SizedBox(height: 12),
 
             // ===== 联系方式 =====
-            _buildSection(
-              context,
-              children: [
-                _buildInfoRow(
-                  icon: Icons.email_outlined,
-                  iconColor: AppTheme.elderColor,
-                  title: '联系邮箱',
-                  value: 'support@gohome.com',
-                  onTap: () {
-                    Clipboard.setData(const ClipboardData(text: 'support@gohome.com'));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('邮箱已复制到剪贴板'), duration: Duration(seconds: 1)),
-                    );
-                  },
-                ),
-                const Divider(indent: 52, height: 0.5),
-                _buildInfoRow(
-                  icon: Icons.language,
-                  iconColor: AppTheme.successColor,
-                  title: '官方网站',
-                  value: 'www.gohome.com',
-                ),
-              ],
-            ),
+            if (telegram.isNotEmpty || websiteUrl.isNotEmpty)
+              _buildSection(
+                context,
+                children: [
+                  if (telegram.isNotEmpty)
+                    _buildInfoRow(
+                      icon: Icons.send_rounded,
+                      iconColor: const Color(0xFF0088CC),
+                      title: 'Telegram',
+                      value: telegram,
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: telegram));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
+                        );
+                      },
+                    ),
+                  if (telegram.isNotEmpty && websiteUrl.isNotEmpty)
+                    const Divider(indent: 52, height: 0.5),
+                  if (websiteUrl.isNotEmpty)
+                    _buildLinkRow(
+                      icon: Icons.language,
+                      iconColor: AppTheme.successColor,
+                      title: '官方网站',
+                      subtitle: websiteName.isNotEmpty ? websiteName : websiteUrl,
+                      onTap: () => _openUrl(websiteUrl),
+                    ),
+                ],
+              ),
 
-            const SizedBox(height: 12),
+            if (telegram.isNotEmpty || websiteUrl.isNotEmpty)
+              const SizedBox(height: 12),
 
             // ===== 法律声明 =====
-            _buildSection(
-              context,
-              children: [
-                _buildDescRow(
-                  icon: Icons.gavel_outlined,
-                  iconColor: AppTheme.textSecondary,
-                  title: '免责声明',
-                  desc: '本平台仅提供信息发布与传播服务，不保证信息的真实性与准确性。如遇紧急情况请立即拨打110报警电话。发布虚假信息将被永久封禁。',
-                ),
-                const Divider(indent: 52, height: 0.5),
-                _buildDescRow(
-                  icon: Icons.privacy_tip_outlined,
-                  iconColor: AppTheme.textSecondary,
-                  title: '隐私政策',
-                  desc: '我们重视用户隐私保护。个人信息仅用于平台服务，不会泄露给第三方。儿童类启事的详细地址将自动隐藏。',
-                ),
-              ],
-            ),
+            if (disclaimer.isNotEmpty || privacy.isNotEmpty)
+              _buildSection(
+                context,
+                children: [
+                  if (disclaimer.isNotEmpty)
+                    _buildDescRow(
+                      icon: Icons.gavel_outlined,
+                      iconColor: AppTheme.textSecondary,
+                      title: '免责声明',
+                      desc: disclaimer,
+                    ),
+                  if (disclaimer.isNotEmpty && privacy.isNotEmpty)
+                    const Divider(indent: 52, height: 0.5),
+                  if (privacy.isNotEmpty)
+                    _buildDescRow(
+                      icon: Icons.privacy_tip_outlined,
+                      iconColor: AppTheme.textSecondary,
+                      title: '隐私政策',
+                      desc: privacy,
+                    ),
+                ],
+              ),
 
             const SizedBox(height: 32),
 
             // ===== 底部版权 =====
+            Text(
+              version,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+            ),
+            const SizedBox(height: 6),
             Text(
               '© ${DateTime.now().year} 回家了么 All Rights Reserved',
               style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
@@ -242,6 +256,54 @@ class AboutPage extends StatelessWidget {
               const SizedBox(width: 4),
               const Icon(Icons.copy, size: 14, color: AppTheme.textHint),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Widget _buildLinkRow({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(fontSize: 12, color: iconColor)),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new, size: 16, color: iconColor.withOpacity(0.6)),
           ],
         ),
       ),

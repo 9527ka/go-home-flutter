@@ -10,8 +10,6 @@ class PostService {
   Future<Map<String, dynamic>> create({
     required int category,
     required String name,
-    int gender = 0,
-    String age = '',
     String species = '',
     required String appearance,
     String description = '',
@@ -22,15 +20,12 @@ class PostService {
     String lostAddress = '',
     double? lostLongitude,
     double? lostLatitude,
-    String contactName = '',
-    required String contactPhone,
     List<String> images = const [],
+    int visibility = 1,
   }) async {
     return await _http.post(ApiConfig.postCreate, data: {
       'category': category,
       'name': name,
-      'gender': gender,
-      'age': age,
       'species': species,
       'appearance': appearance,
       'description': description,
@@ -41,9 +36,8 @@ class PostService {
       'lost_address': lostAddress,
       'lost_longitude': lostLongitude,
       'lost_latitude': lostLatitude,
-      'contact_name': contactName,
-      'contact_phone': contactPhone,
       'images': images,
+      'visibility': visibility,
     });
   }
 
@@ -106,8 +100,6 @@ class PostService {
   Future<Map<String, dynamic>> update({
     required int id,
     String? name,
-    int? gender,
-    String? age,
     String? species,
     String? appearance,
     String? description,
@@ -118,14 +110,11 @@ class PostService {
     String? lostAddress,
     double? lostLongitude,
     double? lostLatitude,
-    String? contactName,
-    String? contactPhone,
     List<String>? images,
+    int? visibility,
   }) async {
     final data = <String, dynamic>{'id': id};
     if (name != null) data['name'] = name;
-    if (gender != null) data['gender'] = gender;
-    if (age != null) data['age'] = age;
     if (species != null) data['species'] = species;
     if (appearance != null) data['appearance'] = appearance;
     if (description != null) data['description'] = description;
@@ -136,9 +125,8 @@ class PostService {
     if (lostAddress != null) data['lost_address'] = lostAddress;
     if (lostLongitude != null) data['lost_longitude'] = lostLongitude;
     if (lostLatitude != null) data['lost_latitude'] = lostLatitude;
-    if (contactName != null) data['contact_name'] = contactName;
-    if (contactPhone != null) data['contact_phone'] = contactPhone;
     if (images != null) data['images'] = images;
+    if (visibility != null) data['visibility'] = visibility;
     return await _http.post(ApiConfig.postUpdate, data: data);
   }
 

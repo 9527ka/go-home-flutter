@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api.dart';
 import '../config/theme.dart';
+import '../l10n/app_localizations.dart';
 import '../models/post.dart';
 import 'report_dialog.dart';
 
@@ -54,10 +55,14 @@ class PostCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 分类标签 + 名字
+                        // 分类标签 + 置顶标识 + 名字
                         Row(
                           children: [
                             _buildCategoryTag(catColor, catBgColor),
+                            if (post.isBoosted) ...[
+                              const SizedBox(width: 6),
+                              _buildBoostBadge(context),
+                            ],
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -121,28 +126,12 @@ class PostCard extends StatelessWidget {
                         // 底部统计栏
                         Row(
                           children: [
-                            _statChip(
-                                Icons.remove_red_eye_outlined, post.viewCount),
-                            const SizedBox(width: 14),
+                            _statChip(Icons.favorite_border, post.likeCount, color: post.likeCount > 0 ? const Color(0xFFE74C3C) : null),
+                            const SizedBox(width: 12),
                             _statChip(Icons.lightbulb_outline, post.clueCount),
+                            const SizedBox(width: 12),
+                            _statChip(Icons.remove_red_eye_outlined, post.viewCount),
                             const Spacer(),
-                            // 紧急标识（儿童类）
-                            if (post.isChild)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.childBg,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  '紧急',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppTheme.childColor,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ),
                             // 举报按钮
                             GestureDetector(
                               onTap: () {
@@ -179,12 +168,6 @@ class PostCard extends StatelessWidget {
 
   Widget _buildCover(Color catColor) {
     final imageUrl = post.coverImage;
-    // 调试日志
-    if (imageUrl.isNotEmpty) {
-      print('📷 PostCard[${post.id}] - 封面图URL: $imageUrl');
-    } else {
-      print('⚠️  PostCard[${post.id}] - 封面图为空');
-    }
 
     return Container(
       width: 88,
@@ -200,15 +183,12 @@ class PostCard extends StatelessWidget {
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
                 placeholder: (context, url) {
-                  print('⏳ PostCard[${post.id}] - 图片加载中: $url');
                   return Center(
                     child: Icon(AppTheme.getCategoryIcon(post.category),
                         color: catColor.withOpacity(0.4), size: 32),
                   );
                 },
                 errorWidget: (context, url, error) {
-                  print('❌ PostCard[${post.id}] - 图片加载失败: $url');
-                  print('   错误详情: $error');
                   return Center(
                     child: Icon(Icons.broken_image_outlined,
                         color: AppTheme.textHint, size: 28),
@@ -219,6 +199,34 @@ class PostCard extends StatelessWidget {
                 child: Icon(AppTheme.getCategoryIcon(post.category),
                     size: 36, color: catColor.withOpacity(0.4)),
               ),
+      ),
+    );
+  }
+
+  Widget _buildBoostBadge(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF6B35), Color(0xFFFF8F00)],
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.rocket_launch, size: 10, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(
+            l10n.get('boosted'),
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -245,15 +253,16 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  Widget _statChip(IconData icon, int count) {
+  Widget _statChip(IconData icon, int count, {Color? color}) {
+    final c = color ?? AppTheme.textHint;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: AppTheme.textHint),
+        Icon(icon, size: 14, color: c.withOpacity(0.7)),
         const SizedBox(width: 3),
         Text(
-          count > 999 ? '999+' : '$count',
-          style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+          count > 9999 ? '${(count / 10000).toStringAsFixed(1)}w' : (count > 999 ? '999+' : '$count'),
+          style: TextStyle(fontSize: 12, color: c.withOpacity(0.7)),
         ),
       ],
     );

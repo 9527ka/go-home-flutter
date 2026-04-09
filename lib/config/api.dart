@@ -4,7 +4,7 @@ class ApiConfig {
   static const String devBaseUrl = 'http://127.0.0.1:8080';
 
   // 生产环境
-  static const String prodBaseUrl = 'https://home.dengshop.com';
+  static const String prodBaseUrl = 'https://api-gohome.douwen.me';
 
   // 当前使用
   static const String baseUrl = prodBaseUrl;
@@ -22,6 +22,9 @@ class ApiConfig {
   static const String quickLogin = '/api/auth/quick-login';
   static const String changeAccount = '/api/auth/change-account';
   static const String changePassword = '/api/auth/change-password';
+
+  // App 配置
+  static const String configApp = '/api/config/app';
 
   static const String postCreate = '/api/post/create';
   static const String postUpdate = '/api/post/update';
@@ -46,6 +49,7 @@ class ApiConfig {
   static const String notificationList = '/api/notification/list';
   static const String notificationUnread = '/api/notification/unread';
   static const String notificationRead = '/api/notification/read';
+  static const String notificationDeleteAll = '/api/notification/deleteAll';
 
   // 账号注销
   static const String deleteAccount = '/api/auth/delete-account';
@@ -65,6 +69,7 @@ class ApiConfig {
   static const String friendRemove = '/api/friend/remove';
   static const String friendSearch = '/api/friend/search';
   static const String friendRequestCount = '/api/friend/request-count';
+  static const String friendRemark = '/api/friend/remark';
 
   // 群组
   static const String groupCreate = '/api/group/create';
@@ -85,8 +90,43 @@ class ApiConfig {
   // 用户信息
   static const String userInfo = '/api/user/info';
 
+  // 爱心中心
+  static const String walletInfo = '/api/wallet/info';
+  static const String walletTransactions = '/api/wallet/transactions';
+  static const String walletRecharge = '/api/wallet/recharge';
+  static const String walletRechargeList = '/api/wallet/recharge/list';
+  static const String walletWithdraw = '/api/wallet/withdraw';
+  static const String walletWithdrawList = '/api/wallet/withdraw/list';
+  static const String walletDonate = '/api/wallet/donate';
+  static const String walletBoost = '/api/wallet/boost';
+  static const String walletBoostActive = '/api/wallet/boost/active';
+
+  // 签到
+  static const String signStatus = '/api/sign/status';
+  static const String signIn = '/api/sign';
+
+  // 任务
+  static const String taskList = '/api/tasks';
+  static const String taskComplete = '/api/task/complete';
+
+  // 红包
+  static const String redPacketSend = '/api/red-packet/send';
+  static const String redPacketClaim = '/api/red-packet/claim';
+  static const String redPacketDetail = '/api/red-packet/detail';
+
+  // 点赞
+  static const String likeToggle = '/api/like/toggle';
+  static const String likeStatus = '/api/like/status';
+  static const String likeUsers = '/api/like/users';
+
+  // 评论
+  static const String commentCreate = '/api/comment/create';
+  static const String commentList = '/api/comment/list';
+  static const String commentReplies = '/api/comment/replies';
+  static const String commentDelete = '/api/comment/delete';
+
   // WebSocket
   static const String wsDevUrl = 'ws://127.0.0.1:8383';
-  static const String wsProdUrl = 'wss://home.dengshop.com/ws';
+  static const String wsProdUrl = 'wss://api-gohome.douwen.me/ws';
   static const String wsUrl = wsProdUrl;
 }

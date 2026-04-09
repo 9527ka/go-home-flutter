@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/post.dart';
 import '../../services/post_service.dart';
 import '../../widgets/post_card.dart';
@@ -161,25 +162,43 @@ class _PostSearchPageState extends State<PostSearchPage> {
   }
 
   Widget _buildSearchHint() {
+    final l = AppLocalizations.of(context)!;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_rounded, size: 56, color: AppTheme.textHint.withOpacity(0.5)),
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(Icons.search_rounded, size: 32, color: AppTheme.primaryColor),
+          ),
           const SizedBox(height: 16),
-          const Text('输入关键词搜索', style: TextStyle(fontSize: 15, color: AppTheme.textSecondary)),
+          Text(l.get('search'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
           const SizedBox(height: 8),
-          const Text('支持搜索姓名、特征、城市等', style: TextStyle(fontSize: 13, color: AppTheme.textHint)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              l.get('search_hint'),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildEmptyResult() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
+    final l = AppLocalizations.of(context)!;
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.15),
+        child: Column(
+          children: [
           Container(
             width: 72,
             height: 72,
@@ -193,7 +212,31 @@ class _PostSearchPageState extends State<PostSearchPage> {
           const Text('未找到相关结果', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
           const Text('试试换个关键词', style: TextStyle(fontSize: 13, color: AppTheme.textHint)),
-        ],
+          const SizedBox(height: 20),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              height: 34,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, AppRoutes.postCreate),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: EdgeInsets.zero,
+                ),
+                child: Text(l.get('publish_post'), style: const TextStyle(fontSize: 13)),
+              ),
+            ),
+          ),
+          ],
+        ),
       ),
     );
   }

@@ -5,22 +5,16 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 
-/// Shows a bottom sheet with message actions (copy, report, block, cancel).
+/// Shows a bottom sheet with message actions (copy, report, cancel).
 ///
 /// [msg] - the message model
 /// [isMe] - whether this message was sent by the current user
 /// [onReport] - callback to report the message
-/// [onBlock] - optional callback to block the user (only for public chat)
-/// [onUnblock] - optional callback to unblock the user (only for public chat)
-/// [isBlocked] - whether the user is currently blocked (only for public chat)
 void showMessageActions({
   required BuildContext context,
   required ChatMessageModel msg,
   required bool isMe,
   required VoidCallback onReport,
-  VoidCallback? onBlock,
-  VoidCallback? onUnblock,
-  bool isBlocked = false,
 }) {
   final l = AppLocalizations.of(context)!;
   showModalBottomSheet(
@@ -55,29 +49,6 @@ void showMessageActions({
                 onTap: () {
                   Navigator.pop(ctx);
                   onReport();
-                },
-              ),
-            // Block / unblock user (not own messages, when callbacks provided)
-            if (!isMe && (onBlock != null || onUnblock != null))
-              ListTile(
-                leading: Icon(
-                  isBlocked
-                      ? Icons.visibility_rounded
-                      : Icons.block_rounded,
-                  color: isBlocked
-                      ? AppTheme.successColor
-                      : AppTheme.dangerColor,
-                ),
-                title: Text(isBlocked
-                    ? l.get('unblock_user')
-                    : l.get('block_user')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  if (isBlocked) {
-                    onUnblock?.call();
-                  } else {
-                    onBlock?.call();
-                  }
                 },
               ),
             // Cancel

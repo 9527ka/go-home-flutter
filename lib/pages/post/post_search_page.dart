@@ -93,7 +93,7 @@ class _PostSearchPageState extends State<PostSearchPage> {
                       focusNode: _focusNode,
                       style: const TextStyle(fontSize: 15),
                       decoration: InputDecoration(
-                        hintText: '搜索名字、特征、地点...',
+                        hintText: AppLocalizations.of(context)!.get('search_input_hint'),
                         hintStyle: TextStyle(fontSize: 14, color: AppTheme.textHint),
                         prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppTheme.textHint),
                         suffixIcon: _searchCtrl.text.isNotEmpty
@@ -129,9 +129,9 @@ class _PostSearchPageState extends State<PostSearchPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     alignment: Alignment.center,
-                    child: const Text(
-                      '搜索',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                    child: Text(
+                      AppLocalizations.of(context)!.get('search'),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                   ),
                 ),
@@ -209,9 +209,9 @@ class _PostSearchPageState extends State<PostSearchPage> {
             child: Icon(Icons.search_off_rounded, size: 36, color: AppTheme.textHint.withOpacity(0.6)),
           ),
           const SizedBox(height: 16),
-          const Text('未找到相关结果', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
+          Text(l.get('no_results_found'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppTheme.textSecondary)),
           const SizedBox(height: 8),
-          const Text('试试换个关键词', style: TextStyle(fontSize: 13, color: AppTheme.textHint)),
+          Text(l.get('try_other_keywords'), style: const TextStyle(fontSize: 13, color: AppTheme.textHint)),
           const SizedBox(height: 20),
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 40),

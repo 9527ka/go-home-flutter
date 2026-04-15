@@ -1,5 +1,6 @@
+import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:http_parser/http_parser.dart';
 import '../config/api.dart';
 import '../utils/storage.dart';
@@ -52,6 +53,11 @@ class HttpClient {
         // 注入语言参数（放到请求头）
         final lang = await StorageUtil.getLanguage();
         options.headers['X-Lang'] = lang;
+
+        // 注入客户端平台
+        if (!kIsWeb) {
+          options.headers['X-Platform'] = Platform.isIOS ? 'ios' : (Platform.isAndroid ? 'android' : 'unknown');
+        }
 
         handler.next(options);
       },

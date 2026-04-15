@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/theme.dart';
@@ -15,6 +16,7 @@ class PrivateChatDetailPage extends StatefulWidget {
   final String friendName;
   final String friendAvatar;
   final String friendUserCode;
+  final bool isOfficial;
 
   /// 清空本地消息的回调
   final VoidCallback? onClearMessages;
@@ -25,6 +27,7 @@ class PrivateChatDetailPage extends StatefulWidget {
     required this.friendName,
     this.friendAvatar = '',
     this.friendUserCode = '',
+    this.isOfficial = false,
     this.onClearMessages,
   });
 
@@ -69,8 +72,10 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
   }
 
   Future<void> _togglePin(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('conv_pin_private_${widget.friendId}', value);
+    // 通过 Provider 持久化并触发会话列表重排；Provider 内部会同步 prefs
+    await context
+        .read<ConversationProvider>()
+        .setPinned(widget.friendId, 'private', value);
     if (mounted) setState(() => _pinChat = value);
   }
 
@@ -141,6 +146,33 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
             ),
           ),
 
+          // 官方认证标识
+          if (widget.isOfficial) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.verified, size: 14, color: Color(0xFF4CAF50)),
+                  SizedBox(width: 4),
+                  Text(
+                    '官方认证',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF4CAF50),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 6),
 
           // ID
@@ -205,7 +237,15 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
           ),
           const Divider(height: 1, indent: 52),
           _buildSwitchRow(
-            icon: Icons.push_pin_outlined,
+            iconWidget: SvgPicture.asset(
+              'assets/icon/top.svg',
+              width: 20,
+              height: 20,
+              colorFilter: const ColorFilter.mode(
+                AppTheme.textSecondary,
+                BlendMode.srcIn,
+              ),
+            ),
             label: l.get('pin_chat'),
             value: _pinChat,
             onChanged: _togglePin,
@@ -216,7 +256,8 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
   }
 
   Widget _buildSwitchRow({
-    required IconData icon,
+    IconData? icon,
+    Widget? iconWidget,
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
@@ -225,7 +266,7 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: AppTheme.textSecondary),
+          iconWidget ?? Icon(icon, size: 20, color: AppTheme.textSecondary),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -260,23 +301,25 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
 
           const SizedBox(height: 12),
 
-          // 投诉
-          _buildActionButton(
-            icon: Icons.flag_outlined,
-            label: l.get('complaint'),
-            color: AppTheme.warningColor,
-            onTap: () => _handleComplaint(l),
-          ),
+          // 投诉（官方客服不显示）
+          if (!widget.isOfficial) ...[
+            _buildActionButton(
+              icon: Icons.flag_outlined,
+              label: l.get('complaint'),
+              color: AppTheme.warningColor,
+              onTap: () => _handleComplaint(l),
+            ),
 
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-          // 删除好友
-          _buildActionButton(
-            icon: Icons.person_remove_outlined,
-            label: l.get('remove_friend'),
-            color: AppTheme.dangerColor,
-            onTap: () => _handleRemoveFriend(l),
-          ),
+            // 删除好友
+            _buildActionButton(
+              icon: Icons.person_remove_outlined,
+              label: l.get('remove_friend'),
+              color: AppTheme.dangerColor,
+              onTap: () => _handleRemoveFriend(l),
+            ),
+          ],
 
           const SizedBox(height: 24),
         ],
@@ -482,7 +525,8 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
               backgroundColor: AppTheme.successColor,
             ),
           );
-          // 删除好友后返回两层（回到会话列表）
+          // 删除好友后同时删除会话，返回会话列表
+          context.read<ConversationProvider>().removeConversation(widget.friendId, 'private');
           Navigator.pop(context); // 关闭详情页
           Navigator.pop(context); // 关闭聊天页
         } else {

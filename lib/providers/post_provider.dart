@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../models/api_response.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
 import '../utils/storage.dart';
@@ -31,8 +30,9 @@ class PostProvider extends ChangeNotifier {
         _posts = list.map((e) => PostModel.fromJson(e as Map<String, dynamic>)).toList();
         notifyListeners();
       }
-    } catch (e) {
-      // 缓存损坏，忽略
+    } catch (e, stackTrace) {
+      debugPrint('[PostProvider] loadFromCache error: $e');
+      debugPrint('[PostProvider] $stackTrace');
     }
   }
 
@@ -105,6 +105,7 @@ class PostProvider extends ChangeNotifier {
 
       if (isRefresh) {
         _posts = pageData.list;
+        debugPrint('[PostProvider] loaded ${_posts.length} posts: ${_posts.map((p) => "id=${p.id} reward=${p.rewardAmount}").join(", ")}');
         // 仅缓存无筛选条件的首页数据
         if (_filterCategory == null && _filterCity == null &&
             _filterKeyword == null && _filterDays == null) {
@@ -115,8 +116,9 @@ class PostProvider extends ChangeNotifier {
       }
 
       _hasMore = pageData.hasMore;
-    } catch (e) {
-      // 加载失败回退页码
+    } catch (e, stackTrace) {
+      debugPrint('[PostProvider] _loadPosts error: $e');
+      debugPrint('[PostProvider] $stackTrace');
       if (!isRefresh) _currentPage--;
     } finally {
       _isLoading = false;

@@ -23,12 +23,9 @@ class CurrencyConfig {
   /// 爱心值 → USDT
   static double toUsdt(double coins) => coins / ratePerUsdt;
 
-  /// 格式化爱心值数量（整数显示，不带小数）
+  /// 格式化爱心值数量（保留两位小数）
   static String format(double amount) {
-    if (amount == amount.roundToDouble()) {
-      return '${amount.toInt()}';
-    }
-    return amount.toStringAsFixed(1);
+    return amount.toStringAsFixed(2);
   }
 
   /// 格式化爱心值数量（纯数字，不带符号）— 与 format 一致

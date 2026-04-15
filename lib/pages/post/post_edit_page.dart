@@ -8,6 +8,7 @@ import '../../services/upload_service.dart';
 import '../../widgets/post/image_picker_section.dart';
 import '../../widgets/post/post_form_fields.dart';
 import '../../widgets/post/visibility_selector.dart';
+import 'location_picker_page.dart';
 
 class PostEditPage extends StatefulWidget {
   final PostModel post;
@@ -25,17 +26,18 @@ class _PostEditPageState extends State<PostEditPage> {
 
   late int _category;
   final _nameCtrl = TextEditingController();
-  final _speciesCtrl = TextEditingController();
   final _appearanceCtrl = TextEditingController();
   final _lostCityCtrl = TextEditingController();
 
   late DateTime _lostAt;
-  List<XFile> _newImages = [];
-  List<String> _existingImageUrls = []; // 已有的服务端图片URL
+  List<MediaItem> _newMedia = [];
+  List<String> _existingImageUrls = [];
   bool _imagesChanged = false;
   bool _isSubmitting = false;
   bool _privacyAgreed = false;
   bool _isPublic = true;
+  double? _lostLatitude;
+  double? _lostLongitude;
 
   @override
   void initState() {
@@ -47,22 +49,20 @@ class _PostEditPageState extends State<PostEditPage> {
     final p = widget.post;
     _category = p.category;
     _nameCtrl.text = p.name;
-    _speciesCtrl.text = p.species;
-    // 合并 appearance + description 到一个字段
     _appearanceCtrl.text = p.description.isNotEmpty
         ? '${p.appearance}\n${p.description}'
         : p.appearance;
-    // 合并城市+地址到一个字段
     _lostCityCtrl.text = p.locationText;
     _lostAt = DateTime.tryParse(p.lostAt) ?? DateTime.now();
     _existingImageUrls = p.images.map((img) => img.imageUrl).toList();
     _isPublic = p.visibility != 2;
+    _lostLatitude = p.lostLatitude;
+    _lostLongitude = p.lostLongitude;
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _speciesCtrl.dispose();
     _appearanceCtrl.dispose();
     _lostCityCtrl.dispose();
     super.dispose();
@@ -75,14 +75,16 @@ class _PostEditPageState extends State<PostEditPage> {
       );
       if (images.isNotEmpty) {
         setState(() {
-          final total = _existingImageUrls.length + _newImages.length;
+          final total = _existingImageUrls.length + _newMedia.length;
           final remaining = 9 - total;
-          _newImages.addAll(images.take(remaining));
+          _newMedia.addAll(
+            images.take(remaining).map((f) => MediaItem(file: f, isVideo: false)),
+          );
           _imagesChanged = true;
         });
       }
     } catch (e) {
-      if (mounted) _showError('无法打开相册');
+      if (mounted) _showError(AppLocalizations.of(context)!.get('cannot_open_album'));
     }
   }
 
@@ -92,15 +94,33 @@ class _PostEditPageState extends State<PostEditPage> {
         source: ImageSource.camera,
         maxWidth: 1920, maxHeight: 1920, imageQuality: 80,
       );
-      final total = _existingImageUrls.length + _newImages.length;
+      final total = _existingImageUrls.length + _newMedia.length;
       if (image != null && total < 9) {
         setState(() {
-          _newImages.add(image);
+          _newMedia.add(MediaItem(file: image, isVideo: false));
           _imagesChanged = true;
         });
       }
     } catch (e) {
-      if (mounted) _showError('无法打开相机');
+      if (mounted) _showError(AppLocalizations.of(context)!.get('cannot_open_camera'));
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final video = await _imagePicker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(minutes: 5),
+      );
+      final total = _existingImageUrls.length + _newMedia.length;
+      if (video != null && total < 9) {
+        setState(() {
+          _newMedia.add(MediaItem(file: video, isVideo: true));
+          _imagesChanged = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) _showError(AppLocalizations.of(context)!.get('cannot_open_album'));
     }
   }
 
@@ -125,23 +145,52 @@ class _PostEditPageState extends State<PostEditPage> {
     }
   }
 
+  Future<void> _pickLocation() async {
+    final result = await Navigator.push<LocationPickerResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerPage(
+          initialLatitude: _lostLatitude,
+          initialLongitude: _lostLongitude,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _lostLatitude = result.latitude;
+        _lostLongitude = result.longitude;
+        if (_lostCityCtrl.text.trim().isEmpty && result.address.isNotEmpty) {
+          _lostCityCtrl.text = result.address;
+        }
+      });
+    }
+  }
+
   Future<void> _submit() async {
+    final l = AppLocalizations.of(context)!;
     if (!_formKey.currentState!.validate()) return;
 
     if (!_privacyAgreed) {
-      _showError(AppLocalizations.of(context)!.get('privacy_consent_required'));
+      _showError(l.get('privacy_consent_required'));
       return;
     }
 
     setState(() => _isSubmitting = true);
 
     try {
-      // 如果图片有变化，上传新图片并合并
       List<String>? finalImages;
       if (_imagesChanged) {
         List<String> uploadedUrls = [];
-        if (_newImages.isNotEmpty) {
-          uploadedUrls = await _uploadService.uploadXFiles(_newImages);
+        if (_newMedia.isNotEmpty) {
+          final imageFiles = _newMedia.where((m) => !m.isVideo).map((m) => m.file).toList();
+          final videoFiles = _newMedia.where((m) => m.isVideo).map((m) => m.file).toList();
+          if (imageFiles.isNotEmpty) {
+            uploadedUrls.addAll(await _uploadService.uploadXFiles(imageFiles));
+          }
+          for (final vf in videoFiles) {
+            final url = await _uploadService.uploadVideo(vf);
+            if (url != null) uploadedUrls.add(url);
+          }
         }
         finalImages = [..._existingImageUrls, ...uploadedUrls];
       }
@@ -149,13 +198,14 @@ class _PostEditPageState extends State<PostEditPage> {
       final res = await _postService.update(
         id: widget.post.id,
         name: _nameCtrl.text.trim(),
-        species: _speciesCtrl.text.trim(),
         appearance: _appearanceCtrl.text.trim(),
         description: '',
         lostAt: _lostAt.toIso8601String(),
         lostCity: _lostCityCtrl.text.trim(),
         lostDistrict: '',
         lostAddress: '',
+        lostLongitude: _lostLongitude,
+        lostLatitude: _lostLatitude,
         images: finalImages,
         visibility: _isPublic ? 1 : 2,
       );
@@ -163,13 +213,13 @@ class _PostEditPageState extends State<PostEditPage> {
       if (!mounted) return;
 
       if (res['code'] == 0) {
-        _showSuccess('修改成功！已重新提交审核。');
+        _showSuccess(l.get('edit_success'));
         Navigator.pop(context, true);
       } else {
-        _showError(res['msg'] ?? '修改失败');
+        _showError(res['msg'] ?? l.get('edit_failed'));
       }
     } catch (e) {
-      _showError('网络异常，请重试');
+      _showError(l.get('network_error'));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -189,8 +239,10 @@ class _PostEditPageState extends State<PostEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('编辑启事')),
+      appBar: AppBar(title: Text(l.get('edit_notice'))),
       body: Column(
         children: [
           Expanded(
@@ -214,7 +266,7 @@ class _PostEditPageState extends State<PostEditPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '审核未通过，请修改后重新提交',
+                              l.get('review_rejected_hint'),
                               style: const TextStyle(color: Color(0xFF856404), fontSize: 14),
                             ),
                           ),
@@ -240,10 +292,10 @@ class _PostEditPageState extends State<PostEditPage> {
                             children: [
                               const Icon(Icons.flag_outlined, color: Color(0xFF721C24), size: 20),
                               const SizedBox(width: 8),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
-                                  '您的帖子因被举报违规已屏蔽，请修改后重新提交审核',
-                                  style: TextStyle(color: Color(0xFF721C24), fontSize: 14),
+                                  l.get('report_blocked_hint'),
+                                  style: const TextStyle(color: Color(0xFF721C24), fontSize: 14),
                                 ),
                               ),
                             ],
@@ -251,7 +303,7 @@ class _PostEditPageState extends State<PostEditPage> {
                           if (widget.post.auditRemark != null && widget.post.auditRemark!.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Text(
-                              '原因：${widget.post.auditRemark}',
+                              '${l.get("reason_prefix")}：${widget.post.auditRemark}',
                               style: const TextStyle(color: Color(0xFF721C24), fontSize: 13),
                             ),
                           ],
@@ -262,7 +314,7 @@ class _PostEditPageState extends State<PostEditPage> {
                   ],
 
                   // 类别（编辑时不允许修改）
-                  const Text('寻找类别', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(l.get('find_category'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -290,26 +342,29 @@ class _PostEditPageState extends State<PostEditPage> {
                   PostFormFields(
                     category: _category,
                     nameCtrl: _nameCtrl,
-                    speciesCtrl: _speciesCtrl,
                     appearanceCtrl: _appearanceCtrl,
                     lostCityCtrl: _lostCityCtrl,
                     lostAt: _lostAt,
                     onSelectDate: _selectDate,
+                    onPickLocation: _pickLocation,
+                    selectedLatitude: _lostLatitude,
+                    selectedLongitude: _lostLongitude,
                   ),
 
                   const SizedBox(height: 20),
 
                   // 图片
-                  const Text('照片 (最多9张)', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(l.get('photos_max'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   ImagePickerSection(
-                    newImages: _newImages,
+                    newMedia: _newMedia,
                     existingImageUrls: _existingImageUrls,
                     onPickImages: _pickImages,
                     onTakePhoto: _takePhoto,
+                    onPickVideo: _pickVideo,
                     onRemoveNewImage: (index) {
                       setState(() {
-                        _newImages.removeAt(index);
+                        _newMedia.removeAt(index);
                         _imagesChanged = true;
                       });
                     },
@@ -324,7 +379,7 @@ class _PostEditPageState extends State<PostEditPage> {
                   const SizedBox(height: 20),
 
                   // ========== 隐私声明同意 ==========
-                  _buildPrivacyConsent(),
+                  _buildPrivacyConsent(l),
 
                   const SizedBox(height: 16),
                 ],
@@ -358,13 +413,13 @@ class _PostEditPageState extends State<PostEditPage> {
                             width: 24, height: 24,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text('提交修改', style: TextStyle(fontSize: 16)),
+                        : Text(l.get('submit_edit'), style: const TextStyle(fontSize: 16)),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '修改后将重新进入审核流程。',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                Text(
+                  l.get('edit_resubmit_notice'),
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -375,7 +430,7 @@ class _PostEditPageState extends State<PostEditPage> {
     );
   }
 
-  Widget _buildPrivacyConsent() {
+  Widget _buildPrivacyConsent(AppLocalizations l) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -391,7 +446,7 @@ class _PostEditPageState extends State<PostEditPage> {
               Icon(Icons.shield_outlined, size: 16, color: AppTheme.primaryColor),
               const SizedBox(width: 6),
               Text(
-                AppLocalizations.of(context)!.get('privacy_consent_title'),
+                l.get('privacy_consent_title'),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -402,7 +457,7 @@ class _PostEditPageState extends State<PostEditPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            AppLocalizations.of(context)!.get('privacy_consent_text'),
+            l.get('privacy_consent_text'),
             style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 8),
@@ -422,7 +477,7 @@ class _PostEditPageState extends State<PostEditPage> {
                 child: GestureDetector(
                   onTap: () => setState(() => _privacyAgreed = !_privacyAgreed),
                   child: Text(
-                    AppLocalizations.of(context)!.get('privacy_consent_checkbox'),
+                    l.get('privacy_consent_checkbox'),
                     style: TextStyle(
                       fontSize: 13,
                       color: _privacyAgreed ? AppTheme.textPrimary : AppTheme.textSecondary,

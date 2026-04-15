@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../config/theme.dart';
 import '../l10n/app_localizations.dart';
 
 /// 聊天消息中的红包卡片

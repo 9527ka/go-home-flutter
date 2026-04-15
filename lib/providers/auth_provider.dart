@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
+import '../services/iap_service.dart';
+import '../services/push_service.dart';
 import '../utils/storage.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -35,6 +37,10 @@ class AuthProvider extends ChangeNotifier {
       if (info != null) {
         _user = UserModel.fromJson(info);
       }
+      // 登录态恢复后初始化 IAP（需要 token 用于收据验证）
+      IapService.instance.initialize();
+      // 注册推送通知
+      PushService.instance.requestPermission();
     }
     _initialized = true;
     notifyListeners();
@@ -57,6 +63,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
+        IapService.instance.initialize();
+        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -86,6 +94,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
+        IapService.instance.initialize();
+        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -121,6 +131,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
+        IapService.instance.initialize();
+        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -147,10 +159,43 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
+        IapService.instance.initialize();
+        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
       return res['msg'] ?? '快速登录失败';
+    } catch (e) {
+      return '网络异常，请重试';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 绑定 Apple ID（游客升级）
+  Future<String?> bindApple({
+    required String identityToken,
+    required String userIdentifier,
+    String? fullName,
+    String? email,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final res = await _authService.bindApple(
+        identityToken: identityToken,
+        userIdentifier: userIdentifier,
+        fullName: fullName,
+        email: email,
+      );
+
+      if (res['code'] == 0) {
+        await refreshProfile();
+        return null;
+      }
+      return res['msg'] ?? '绑定失败';
     } catch (e) {
       return '网络异常，请重试';
     } finally {
@@ -234,7 +279,8 @@ class AuthProvider extends ChangeNotifier {
       );
 
       if (res['code'] == 0) {
-        // 清除所有本地数据
+        // 注销推送令牌并清除所有本地数据
+        await PushService.instance.unregister();
         await _authService.logout();
         _user = null;
         _isLoggedIn = false;
@@ -252,6 +298,7 @@ class AuthProvider extends ChangeNotifier {
 
   /// 退出登录
   Future<void> logout() async {
+    await PushService.instance.unregister();
     await _authService.logout();
     await StorageUtil.clearPostsCache();
     await StorageUtil.clearChatCache();

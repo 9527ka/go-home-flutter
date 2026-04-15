@@ -10,6 +10,7 @@ class AvatarWidget extends StatelessWidget {
   final String name;
   final double size;
   final double? borderRadius;
+  final bool isOfficial;
 
   const AvatarWidget({
     super.key,
@@ -17,10 +18,11 @@ class AvatarWidget extends StatelessWidget {
     required this.name,
     this.size = 40,
     this.borderRadius,
+    this.isOfficial = false,
   });
 
   /// System avatar color and icon mapping
-  static const _systemAvatarStyles = <String, List<dynamic>>{
+  static const systemAvatarStyles = <String, List<dynamic>>{
     '/system/avatars/avatar_1.svg': [Color(0xFF4A90D9), Icons.person],
     '/system/avatars/avatar_2.svg': [Color(0xFF5BA0E8), Icons.person_outline],
     '/system/avatars/avatar_3.svg': [Color(0xFF34A853), Icons.face],
@@ -44,6 +46,31 @@ class AvatarWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final avatar = _buildAvatar();
+    if (!isOfficial) return avatar;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        avatar,
+        Positioned(
+          top: -3,
+          right: -3,
+          child: Icon(
+            Icons.verified_user,
+            size: size * 0.36,
+            color: const Color(0xFF34A853),
+            shadows: const [
+              Shadow(color: Colors.white, blurRadius: 3),
+              Shadow(color: Colors.white, blurRadius: 3),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatar() {
     final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
     final radius = borderRadius ?? size / 2;
 
@@ -52,7 +79,7 @@ class AvatarWidget extends StatelessWidget {
 
     // System preset avatar
     if (systemKey != null) {
-      final style = _systemAvatarStyles[systemKey];
+      final style = systemAvatarStyles[systemKey];
       final color = (style != null ? style[0] : AppTheme.primaryColor) as Color;
       final icon = (style != null ? style[1] : Icons.person) as IconData;
 

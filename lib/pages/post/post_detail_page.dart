@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
+import '../../widgets/post/image_picker_section.dart' show isVideoFile;
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -16,6 +19,9 @@ import '../../services/post_service.dart';
 import '../../services/favorite_service.dart';
 import '../wallet/donate_dialog.dart';
 import '../wallet/boost_dialog.dart';
+import '../wallet/reward_pay_dialog.dart';
+import '../../config/currency.dart';
+import '../../widgets/coin_icon.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/disclaimer_banner.dart';
 import '../../widgets/ai_banner.dart';
@@ -123,7 +129,7 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Text(
-                  '线索 (${post.clueCount})',
+                  '${AppLocalizations.of(context)!.get("clue_count")} (${post.clueCount})',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -144,7 +150,7 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
                 child: Padding(
                   padding: const EdgeInsets.all(32),
                   child: Center(
-                    child: Text('暂无线索', style: TextStyle(color: AppTheme.textHint)),
+                    child: Text(AppLocalizations.of(context)!.get('no_clues'), style: TextStyle(color: AppTheme.textHint)),
                   ),
                 ),
               ),
@@ -187,10 +193,14 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
                       style: const TextStyle(fontSize: 12, color: AppTheme.textHint)),
                 ],
               ),
+              // 悬赏标签
+              if (post.hasReward) ...[
+                const SizedBox(height: 12),
+                _buildRewardBanner(post),
+              ],
               const SizedBox(height: 16),
               Text(post.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              if (post.species.isNotEmpty) _infoRow(AppLocalizations.of(context)!.get('species'), post.species),
               const Divider(height: 32),
               Text(AppLocalizations.of(context)!.get('appearance'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -266,8 +276,12 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
         child: PageView.builder(
           itemCount: images.length,
           itemBuilder: (_, index) {
+            final url = images[index].imageUrl;
+            if (isVideoFile(url)) {
+              return _VideoItem(videoUrl: url);
+            }
             return CachedNetworkImage(
-              imageUrl: images[index].imageUrl,
+              imageUrl: url,
               fit: BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[200]),
               errorWidget: (_, __, ___) => Container(
@@ -320,7 +334,7 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
           onLike: () {
             final auth = context.read<AuthProvider>();
             if (!auth.isLoggedIn) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.get('login_required'))));
               return;
             }
             ip.togglePostLike(post.id);
@@ -337,7 +351,7 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
     if (_post == null || _favToggling) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.get('login_required'))));
       return;
     }
     _favToggling = true;
@@ -473,6 +487,66 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
 
   // ==================== 工具方法 ====================
 
+  Widget _buildRewardBanner(PostModel post) {
+    final l = AppLocalizations.of(context)!;
+    final remaining = post.rewardRemaining;
+    final progress = post.rewardAmount > 0 ? post.rewardPaid / post.rewardAmount : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFF8E1), Color(0xFFFFECB3)],
+        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFD54F)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.monetization_on, color: Color(0xFFFF8F00), size: 20),
+              const SizedBox(width: 6),
+              Text(l.get('reward_bounty'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFFF8F00))),
+              const Spacer(),
+              CoinAmount(
+                amount: post.rewardAmount,
+                iconSize: 14,
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFFF8F00)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 进度条
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: Colors.white.withOpacity(0.6),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF8F00)),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${l.get("reward_paid_label")} ${CurrencyConfig.format(post.rewardPaid)}',
+                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+              ),
+              Text(
+                '${l.get("reward_remaining")}: ${CurrencyConfig.format(remaining)}',
+                style: const TextStyle(fontSize: 11, color: Color(0xFFFF8F00)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTag(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -513,49 +587,96 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
   }
 
   void _showUserProfile(UserModel user) {
-    UserProfilePage.show(context, userId: user.id, nickname: user.nickname, avatar: user.avatar, userCode: user.userCode);
+    UserProfilePage.show(context, userId: user.id, nickname: user.nickname, avatar: user.avatar, userCode: user.userCode, isOfficial: user.isOfficialService);
   }
 
   Widget _buildClueCard(ClueModel clue) {
     final auth = context.read<AuthProvider>();
-    final friendProvider = context.watch<FriendProvider>();
+    final friendProvider = context.read<FriendProvider>();
     final clueUser = clue.user;
     final isMe = auth.isLoggedIn && clueUser != null && auth.user?.id == clueUser.id;
     final isFriend = clueUser != null && friendProvider.isFriend(clueUser.id);
     final l = AppLocalizations.of(context)!;
 
-    return ClueCard(
-      clue: clue,
-      isMe: isMe,
-      isFriend: isFriend,
-      isLoggedIn: auth.isLoggedIn,
-      onUserTap: clueUser != null ? () => _showUserProfile(clueUser) : null,
-      onAddFriend: clueUser != null ? () async {
-        final error = await context.read<FriendProvider>().sendRequest(toId: clueUser.id);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(error != null ? l.get(error) : l.get('request_sent')),
-          backgroundColor: error != null ? AppTheme.dangerColor : AppTheme.successColor,
-        ));
-      } : null,
+    // 是否显示发放悬赏按钮：发布者看到别人的线索 + 有剩余悬赏
+    final isOwner = auth.isLoggedIn && _post != null && auth.user?.id == _post!.userId;
+    final showPayReward = isOwner && _post!.hasReward && _post!.rewardRemaining > 0 && !isMe;
+
+    return Column(
+      children: [
+        ClueCard(
+          clue: clue,
+          isMe: isMe,
+          isFriend: isFriend,
+          isLoggedIn: auth.isLoggedIn,
+          onUserTap: clueUser != null ? () => _showUserProfile(clueUser) : null,
+          onAddFriend: clueUser != null ? () async {
+            final error = await context.read<FriendProvider>().sendRequest(toId: clueUser.id);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(error ?? l.get('request_sent')),
+              backgroundColor: error != null ? AppTheme.warningColor : AppTheme.successColor,
+            ));
+          } : null,
+        ),
+        if (showPayReward)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showRewardPay(clue),
+                icon: const Icon(Icons.monetization_on_outlined, size: 16, color: Color(0xFFFF8F00)),
+                label: Text(l.get('reward_pay_clue'), style: const TextStyle(color: Color(0xFFFF8F00))),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFFFD54F)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
+  }
+
+  void _showRewardPay(ClueModel clue) async {
+    if (_post == null) return;
+    final result = await showDialog(
+      context: context,
+      builder: (_) => RewardPayDialog(
+        postId: _post!.id,
+        clueId: clue.id,
+        clueUserName: clue.user?.nickname,
+        maxAmount: _post!.rewardRemaining,
+      ),
+    );
+    if (result == true) _loadDetail();
   }
 
   Future<void> _share() async {
     if (_post == null) return;
-    final text = '【回家了么】寻找${_post!.categoryText}：${_post!.name}\n'
-        '走失地点：${_post!.locationText}\n'
-        '联系方式：请通过平台查看\n'
-        '请帮忙转发扩散，谢谢！';
-    try {
-      final box = context.findRenderObject() as RenderBox?;
-      await Share.share(text,
-          sharePositionOrigin: box != null ? Rect.fromLTWH(box.size.width - 50, 0, 50, 50) : null);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.get('share_failed'))));
-      }
-    }
+    final l = AppLocalizations.of(context)!;
+    final appConfig = context.read<AppConfigProvider>();
+    final baseUrl = appConfig.about['website_url'] ?? 'https://gohome.douwen.me';
+    final shareUrl = '$baseUrl/#/post/detail?id=${_post!.id}';
+    final shareText = '${l.get("app_name")} - ${_post!.categoryText}：${_post!.name}\n$shareUrl';
+
+    // 先复制链接到剪贴板
+    await Clipboard.setData(ClipboardData(text: shareText));
+
+    if (!mounted) return;
+
+    // 弹出分享底部面板
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _ShareSheet(
+        shareText: shareText,
+        shareUrl: shareUrl,
+      ),
+    );
   }
 
   void _showReport() {
@@ -573,4 +694,407 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
     final result = await showDialog(context: context, builder: (_) => BoostDialog(postId: _post!.id));
     if (result == true) _loadDetail();
   }
+}
+
+// ==================== 分享面板 ====================
+
+class _ShareSheet extends StatelessWidget {
+  final String shareText;
+  final String shareUrl;
+
+  const _ShareSheet({required this.shareText, required this.shareUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 拖拽指示条
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 已复制提示
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.successColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: AppTheme.successColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l.get('share_link_copied'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.successColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // 分享到提示
+            Text(
+              l.get('share_to_paste'),
+              style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 16),
+
+            // 分享平台按钮
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildShareTarget(
+                  context,
+                  icon: 'wechat',
+                  label: l.get('share_wechat'),
+                  color: const Color(0xFF07C160),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openWeChat();
+                  },
+                ),
+                _buildShareTarget(
+                  context,
+                  icon: 'telegram',
+                  label: 'Telegram',
+                  color: const Color(0xFF0088CC),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _shareToTelegram();
+                  },
+                ),
+                _buildShareTarget(
+                  context,
+                  icon: 'whatsapp',
+                  label: 'WhatsApp',
+                  color: const Color(0xFF25D366),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _shareToWhatsApp();
+                  },
+                ),
+                Builder(builder: (sheetCtx) {
+                  return _buildShareTarget(
+                    sheetCtx,
+                    icon: 'copy',
+                    label: l.get('copy_link'),
+                    color: AppTheme.textSecondary,
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: shareText));
+                      final messenger = ScaffoldMessenger.of(sheetCtx);
+                      Navigator.pop(sheetCtx);
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(l.get('copied')),
+                          backgroundColor: AppTheme.successColor,
+                        ),
+                      );
+                    },
+                  );
+                }),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // 取消按钮
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.grey[100],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(
+                  l.get('cancel'),
+                  style: const TextStyle(fontSize: 16, color: AppTheme.textSecondary),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShareTarget(
+    BuildContext context, {
+    required String icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(child: _buildBrandIcon(icon)),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandIcon(String brand) {
+    switch (brand) {
+      case 'wechat':
+        return CustomPaint(size: const Size(28, 28), painter: _WeChatPainter());
+      case 'telegram':
+        return CustomPaint(size: const Size(28, 28), painter: _TelegramPainter());
+      case 'whatsapp':
+        return CustomPaint(size: const Size(28, 28), painter: _WhatsAppPainter());
+      case 'copy':
+        return const Icon(Icons.copy, size: 24, color: Colors.white);
+      default:
+        return const Icon(Icons.share, size: 24, color: Colors.white);
+    }
+  }
+
+  void _openWeChat() async {
+    // 微信无法直接通过 URL scheme 传递文本，只能尝试打开微信
+    // 用户需要手动粘贴已复制的内容
+    final uri = Uri.parse('weixin://');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  void _shareToTelegram() async {
+    final uri = Uri.parse('https://t.me/share/url?url=${Uri.encodeComponent(shareUrl)}&text=${Uri.encodeComponent(shareText)}');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  void _shareToWhatsApp() async {
+    final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(shareText)}');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+}
+
+// ==================== 视频播放组件 ====================
+
+class _VideoItem extends StatefulWidget {
+  final String videoUrl;
+  const _VideoItem({required this.videoUrl});
+
+  @override
+  State<_VideoItem> createState() => _VideoItemState();
+}
+
+class _VideoItemState extends State<_VideoItem> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+  bool _playing = false;
+  bool _hasError = false;
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _onVideoStatusChanged() {
+    if (_controller == null || !mounted) return;
+    final value = _controller!.value;
+    if (value.position >= value.duration && value.duration > Duration.zero) {
+      _controller!.pause();
+      _controller!.seekTo(Duration.zero);
+      setState(() => _playing = false);
+    }
+  }
+
+  Future<void> _initAndPlay() async {
+    try {
+      if (_controller == null) {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+        _controller!.addListener(_onVideoStatusChanged);
+        await _controller!.initialize();
+        if (!mounted) return;
+        _initialized = true;
+      }
+      _controller!.play();
+      if (mounted) setState(() => _playing = true);
+    } catch (e) {
+      debugPrint('[_VideoItem] init error: $e');
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return Container(
+        color: Colors.black87,
+        child: const Center(
+          child: Icon(Icons.error_outline, color: Colors.white54, size: 48),
+        ),
+      );
+    }
+
+    if (_initialized && _playing) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: _controller!.value.aspectRatio,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+          Positioned(
+            bottom: 8, right: 8,
+            child: GestureDetector(
+              onTap: () {
+                _controller!.pause();
+                setState(() => _playing = false);
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Colors.black45,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.pause, color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return GestureDetector(
+      onTap: _initAndPlay,
+      child: Container(
+        color: Colors.black87,
+        child: const Center(
+          child: Icon(Icons.play_circle_outline, color: Colors.white, size: 64),
+        ),
+      ),
+    );
+  }
+}
+
+// ==================== 品牌图标绘制 ====================
+
+/// 微信图标
+class _WeChatPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    // 大气泡
+    canvas.drawOval(Rect.fromCenter(center: Offset(cx - 1, cy + 1), width: size.width * 0.62, height: size.height * 0.5), paint);
+    // 小气泡
+    canvas.drawOval(Rect.fromCenter(center: Offset(cx + 5, cy - 4), width: size.width * 0.46, height: size.height * 0.38), paint);
+    // 大气泡的眼睛
+    final eyePaint = Paint()..color = const Color(0xFF07C160)..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(cx - 4, cy + 0.5), 1.5, eyePaint);
+    canvas.drawCircle(Offset(cx + 2, cy + 0.5), 1.5, eyePaint);
+    // 小气泡的眼睛
+    canvas.drawCircle(Offset(cx + 3, cy - 4.5), 1.2, eyePaint);
+    canvas.drawCircle(Offset(cx + 7.5, cy - 4.5), 1.2, eyePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Telegram 图标（纸飞机）
+class _TelegramPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+    final w = size.width;
+    final h = size.height;
+
+    final path = Path()
+      ..moveTo(w * 0.12, h * 0.48)
+      ..lineTo(w * 0.88, h * 0.18)
+      ..lineTo(w * 0.68, h * 0.82)
+      ..lineTo(w * 0.48, h * 0.60)
+      ..close();
+    canvas.drawPath(path, paint);
+
+    final path2 = Path()
+      ..moveTo(w * 0.48, h * 0.60)
+      ..lineTo(w * 0.62, h * 0.82)
+      ..lineTo(w * 0.68, h * 0.82)
+      ..lineTo(w * 0.48, h * 0.60)
+      ..close();
+    canvas.drawPath(path2, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// WhatsApp 图标（电话气泡）
+class _WhatsAppPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    // 气泡圆
+    canvas.drawCircle(Offset(cx, cy), size.width * 0.38, paint);
+
+    // 电话听筒
+    final phonePaint = Paint()
+      ..color = const Color(0xFF25D366)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+
+    final phonePath = Path()
+      ..moveTo(cx - 4.5, cy + 3)
+      ..quadraticBezierTo(cx - 4.5, cy - 4, cx, cy - 4.5)
+      ..quadraticBezierTo(cx + 4.5, cy - 4, cx + 4.5, cy + 3);
+    canvas.drawPath(phonePath, phonePaint);
+
+    // 听筒两端
+    canvas.drawLine(Offset(cx - 5, cy + 0.5), Offset(cx - 4, cy + 4), phonePaint);
+    canvas.drawLine(Offset(cx + 5, cy + 0.5), Offset(cx + 4, cy + 4), phonePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

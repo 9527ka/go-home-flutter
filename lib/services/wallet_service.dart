@@ -5,7 +5,6 @@ import '../models/wallet_transaction.dart';
 import '../models/recharge_order.dart';
 import '../models/withdrawal_order.dart';
 import '../models/red_packet.dart';
-import '../models/post_boost.dart';
 import 'http_client.dart';
 
 class WalletService {
@@ -38,7 +37,7 @@ class WalletService {
     return PageData(list: [], page: 1, pageSize: 20, total: 0);
   }
 
-  /// 提交获取申请
+  /// 提交获取申请（USDT 手动充值）
   Future<Map<String, dynamic>> recharge({
     required double amount,
     String txHash = '',
@@ -48,6 +47,17 @@ class WalletService {
       'amount': amount,
       'tx_hash': txHash,
       if (screenshotUrl != null) 'screenshot_url': screenshotUrl,
+    });
+  }
+
+  /// Apple IAP 充值（收据验证 + 自动到账）
+  Future<Map<String, dynamic>> iapRecharge({
+    required String receiptData,
+    required String productId,
+  }) async {
+    return await _http.post(ApiConfig.walletIapRecharge, data: {
+      'receipt_data': receiptData,
+      'product_id': productId,
     });
   }
 
@@ -122,6 +132,21 @@ class WalletService {
       return Map<String, dynamic>.from(res['data']);
     }
     return null;
+  }
+
+  /// 发放悬赏
+  Future<Map<String, dynamic>> rewardPay({
+    required int postId,
+    required int clueId,
+    required double amount,
+    String message = '',
+  }) async {
+    return await _http.post(ApiConfig.walletRewardPay, data: {
+      'post_id': postId,
+      'clue_id': clueId,
+      'amount': amount,
+      'message': message,
+    });
   }
 
   /// 发红包

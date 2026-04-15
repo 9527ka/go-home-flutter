@@ -5,10 +5,11 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
-import '../../providers/friend_provider.dart';
+
 import '../../providers/app_config_provider.dart';
 import '../../providers/sign_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../utils/session_reset.dart';
 import '../../widgets/delete_account_dialog.dart';
 import '../../widgets/profile/profile_header.dart';
 import '../../widgets/profile/profile_menu_item.dart';
@@ -43,12 +44,26 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = auth.user;
     final l = AppLocalizations.of(context)!;
     final notificationProvider = context.watch<NotificationProvider>();
-    final friendProvider = context.watch<FriendProvider>();
     final appConfig = context.watch<AppConfigProvider>();
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      body: CustomScrollView(
+      appBar: AppBar(
+        title: Text(l.get('profile')),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          final auth = context.read<AuthProvider>();
+          if (auth.isLoggedIn) {
+            final appConfig = context.read<AppConfigProvider>();
+            if (appConfig.walletEnabled) {
+              await context.read<WalletProvider>().loadWalletInfo();
+              await context.read<SignProvider>().loadStatus();
+            }
+            await context.read<NotificationProvider>().fetchUnreadCount();
+          }
+        },
+        child: CustomScrollView(
         slivers: [
           // ===== Gradient header =====
           SliverToBoxAdapter(
@@ -109,19 +124,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       notificationProvider.fetchUnreadCount();
                     },
                   ),
-                  const Divider(indent: 58, height: 0.5),
-                  ProfileMenuItem(
-                    icon: Icons.people_outline,
-                    iconColor: const Color(0xFF06B6D4),
-                    title: l.get('my_friends'),
-                    subtitle: l.get('my_friends_subtitle'),
-                    showBadge: friendProvider.hasNewRequests,
-                    onTap: () async {
-                      await Navigator.pushNamed(context, AppRoutes.friendListPage);
-                      friendProvider.loadFriends();
-                      friendProvider.fetchRequestCount();
-                    },
-                  ),
+                  // "我的好友"已隐藏
                 ],
               ),
             ),
@@ -176,7 +179,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.info_outline,
                     iconColor: AppTheme.textSecondary,
                     title: l.get('about'),
-                    subtitle: '${l.get('version')} 1.0.0',
+                    subtitle: appConfig.about['version'] ?? '${l.get('version')} 1.0.0',
                     onTap: () => Navigator.pushNamed(context, AppRoutes.about),
                   ),
                   if (auth.isLoggedIn) ...[
@@ -224,7 +227,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       );
                       if (confirmed == true && context.mounted) {
-                        await auth.logout();
+                        // 彻底清理 Provider 内存 + per-user prefs，防止新账号登录后看到上一个账号的数据
+                        await performLogout(context);
                         if (context.mounted) {
                           Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
                         }
@@ -243,6 +247,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
+      ),
       ),
     );
   }

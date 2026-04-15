@@ -4,6 +4,7 @@ import '../config/routes.dart';
 import '../config/theme.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../utils/session_reset.dart';
 
 class DeleteAccountDialog extends StatefulWidget {
   const DeleteAccountDialog({super.key});
@@ -56,6 +57,9 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
     if (error == null) {
       // 先获取 SnackBar 的 messenger，避免导航后 context 失效
       final messenger = ScaffoldMessenger.of(context);
+      // 注销账号成功后，彻底清理 Provider 内存 + per-user prefs，防止残留
+      await performLogout(context, isDeleteAccount: true);
+      if (!mounted) return;
       Navigator.pop(context); // close dialog
       Navigator.pushNamedAndRemoveUntil(
         context,

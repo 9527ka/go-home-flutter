@@ -1,0 +1,139 @@
+{
+  "identifier" : "GoHomeProducts",
+  "nonRenewableSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "1001",
+      "localizations" : [
+        {
+          "description" : "100 爱心值",
+          "displayName" : "100 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "100 Love Points",
+          "displayName" : "100 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin100",
+      "referenceName" : "100 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "1002",
+      "localizations" : [
+        {
+          "description" : "500 爱心值",
+          "displayName" : "500 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "500 Love Points",
+          "displayName" : "500 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin500",
+      "referenceName" : "500 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "1003",
+      "localizations" : [
+        {
+          "description" : "1000 爱心值",
+          "displayName" : "1000 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "1000 Love Points",
+          "displayName" : "1000 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin1000",
+      "referenceName" : "1000 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "19.99",
+      "familyShareable" : false,
+      "internalID" : "1004",
+      "localizations" : [
+        {
+          "description" : "2000 爱心值",
+          "displayName" : "2000 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "2000 Love Points",
+          "displayName" : "2000 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin2000",
+      "referenceName" : "2000 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "1005",
+      "localizations" : [
+        {
+          "description" : "5000 爱心值",
+          "displayName" : "5000 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "5000 Love Points",
+          "displayName" : "5000 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin5000",
+      "referenceName" : "5000 Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "1006",
+      "localizations" : [
+        {
+          "description" : "10000 爱心值",
+          "displayName" : "10000 爱心值",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "10000 Love Points",
+          "displayName" : "10000 Love Points",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.gohome.coin10000",
+      "referenceName" : "10000 Coins",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "GoHome",
+    "_developerTeamID" : ""
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

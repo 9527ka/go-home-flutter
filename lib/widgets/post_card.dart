@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../config/api.dart';
 import '../config/theme.dart';
+import 'post/image_picker_section.dart' show isVideoFile;
+import '../config/currency.dart';
 import '../l10n/app_localizations.dart';
 import '../models/post.dart';
 import 'report_dialog.dart';
@@ -63,6 +64,17 @@ class PostCard extends StatelessWidget {
                               const SizedBox(width: 6),
                               _buildBoostBadge(context),
                             ],
+                            if (post.hasReward) ...[
+                              const SizedBox(width: 6),
+                              Builder(builder: (ctx) {
+                                try {
+                                  return _buildRewardBadge(ctx);
+                                } catch (e) {
+                                  debugPrint('[PostCard] reward badge error: $e');
+                                  return const SizedBox.shrink();
+                                }
+                              }),
+                            ],
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -104,7 +116,7 @@ class PostCard extends StatelessWidget {
                               child: Text(
                                 post.locationText.isNotEmpty
                                     ? post.locationText
-                                    : '未知位置',
+                                    : AppLocalizations.of(context)!.get('unknown_location'),
                                 style: const TextStyle(
                                     fontSize: 12,
                                     color: AppTheme.textSecondary),
@@ -114,7 +126,7 @@ class PostCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              _formatTime(post.createdAt),
+                              _formatTime(context, post.createdAt),
                               style: TextStyle(
                                   fontSize: 11, color: AppTheme.textHint),
                             ),
@@ -179,22 +191,29 @@ class PostCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: imageUrl.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) {
-                  return Center(
-                    child: Icon(AppTheme.getCategoryIcon(post.category),
-                        color: catColor.withOpacity(0.4), size: 32),
-                  );
-                },
-                errorWidget: (context, url, error) {
-                  return Center(
-                    child: Icon(Icons.broken_image_outlined,
-                        color: AppTheme.textHint, size: 28),
-                  );
-                },
-              )
+            ? isVideoFile(imageUrl)
+                ? Container(
+                    color: Colors.black87,
+                    child: const Center(
+                      child: Icon(Icons.play_circle_outline, color: Colors.white70, size: 36),
+                    ),
+                  )
+                : CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) {
+                      return Center(
+                        child: Icon(AppTheme.getCategoryIcon(post.category),
+                            color: catColor.withOpacity(0.4), size: 32),
+                      );
+                    },
+                    errorWidget: (context, url, error) {
+                      return Center(
+                        child: Icon(Icons.broken_image_outlined,
+                            color: AppTheme.textHint, size: 28),
+                      );
+                    },
+                  )
             : Center(
                 child: Icon(AppTheme.getCategoryIcon(post.category),
                     size: 36, color: catColor.withOpacity(0.4)),
@@ -220,6 +239,34 @@ class PostCard extends StatelessWidget {
           const SizedBox(width: 3),
           Text(
             l10n.get('boosted'),
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardBadge(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF8F00), Color(0xFFFFC107)],
+        ),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.monetization_on, size: 10, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(
+            '${l10n.get("reward_badge")} ${CurrencyConfig.format(post.rewardAmount)}',
             style: const TextStyle(
               fontSize: 10,
               color: Colors.white,
@@ -268,17 +315,18 @@ class PostCard extends StatelessWidget {
     );
   }
 
-  String _formatTime(String dateStr) {
+  String _formatTime(BuildContext context, String dateStr) {
     try {
+      final l = AppLocalizations.of(context)!;
       final date = DateTime.parse(dateStr);
       final now = DateTime.now();
       final diff = now.difference(date);
 
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-      if (diff.inHours < 24) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
-      if (diff.inDays < 365) return '${date.month}月${date.day}日';
+      if (diff.inMinutes < 1) return l.get('time_just_now');
+      if (diff.inMinutes < 60) return l.get('time_minutes_ago').replaceAll('{n}', '${diff.inMinutes}');
+      if (diff.inHours < 24) return l.get('time_hours_ago').replaceAll('{n}', '${diff.inHours}');
+      if (diff.inDays < 7) return l.get('time_days_ago').replaceAll('{n}', '${diff.inDays}');
+      if (diff.inDays < 365) return '${date.month}/${date.day}';
       return '${date.year}/${date.month}/${date.day}';
     } catch (e) {
       return dateStr;

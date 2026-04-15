@@ -4,7 +4,6 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/wallet_service.dart';
 import '../../models/wallet_transaction.dart';
-import '../../models/api_response.dart';
 
 class TransactionHistoryPage extends StatefulWidget {
   const TransactionHistoryPage({super.key});
@@ -24,14 +23,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> with Si
   int _page = 1;
   int? _currentType;
 
-  // Tab 类型映射: null=全部, 1=获取, 2=发放, 3+4=支持, 6+7=红包, 5=曝光
-  static const _tabTypes = <int?>[null, 1, 2, null, null, 5];
-  // 捐赠和红包需要特殊处理（两种类型合并）
+  // Tab 类型映射: null=全部, 1=获取, 3+4=支持(客户端过滤), 6+7+8=红包(客户端过滤), 5=曝光
+  // iOS 版已隐藏「发放」tab
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
     _loadData();
@@ -52,12 +50,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> with Si
 
     final idx = _tabController.index;
     switch (idx) {
-      case 0: _currentType = null; break;
-      case 1: _currentType = 1; break;
-      case 2: _currentType = 2; break;
-      case 3: _currentType = null; break; // 支持 - 客户端过滤
-      case 4: _currentType = null; break; // 红包 - 客户端过滤
-      case 5: _currentType = 5; break;
+      case 0: _currentType = null; break;  // 全部
+      case 1: _currentType = 1; break;     // 获取
+      case 2: _currentType = null; break;  // 支持 - 客户端过滤
+      case 3: _currentType = null; break;  // 红包 - 客户端过滤
+      case 4: _currentType = 5; break;     // 曝光
     }
     _loadData();
   }
@@ -76,9 +73,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> with Si
 
       // 客户端过滤支持/红包
       final tabIdx = _tabController.index;
-      if (tabIdx == 3) {
+      if (tabIdx == 2) {
         items = items.where((t) => t.type == 3 || t.type == 4).toList();
-      } else if (tabIdx == 4) {
+      } else if (tabIdx == 3) {
         items = items.where((t) => t.type == 6 || t.type == 7 || t.type == 8).toList();
       }
 
@@ -101,9 +98,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> with Si
       var items = data.list;
 
       final tabIdx = _tabController.index;
-      if (tabIdx == 3) {
+      if (tabIdx == 2) {
         items = items.where((t) => t.type == 3 || t.type == 4).toList();
-      } else if (tabIdx == 4) {
+      } else if (tabIdx == 3) {
         items = items.where((t) => t.type == 6 || t.type == 7 || t.type == 8).toList();
       }
 
@@ -134,7 +131,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> with Si
           tabs: [
             Tab(text: l.get('all')),
             Tab(text: l.get('recharge')),
-            Tab(text: l.get('withdraw')),
             Tab(text: l.get('donation')),
             Tab(text: l.get('red_packet')),
             Tab(text: l.get('boost')),

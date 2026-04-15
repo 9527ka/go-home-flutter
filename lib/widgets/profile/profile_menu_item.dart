@@ -8,6 +8,7 @@ class ProfileMenuItem extends StatelessWidget {
   final String title;
   final String? subtitle;
   final bool showBadge;
+  final Widget? trailing;
   final VoidCallback? onTap;
 
   const ProfileMenuItem({
@@ -17,6 +18,7 @@ class ProfileMenuItem extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.showBadge = false,
+    this.trailing,
     this.onTap,
   });
 
@@ -67,7 +69,7 @@ class ProfileMenuItem extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppTheme.textHint, size: 20),
+            trailing ?? const Icon(Icons.chevron_right, color: AppTheme.textHint, size: 20),
           ],
         ),
       ),

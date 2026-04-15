@@ -14,9 +14,12 @@ class FriendSearchPage extends StatefulWidget {
 
 class _FriendSearchPageState extends State<FriendSearchPage> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _greetingCtrl = TextEditingController();
   List<UserModel> _results = [];
   bool _isSearching = false;
   bool _hasSearched = false;
+  int? _pendingUserId; // 正在填写打招呼的用户 ID
+  bool _isSendingRequest = false;
 
   /// System avatar color and icon mapping
   static const _systemAvatarStyles = <String, Map<String, dynamic>>{
@@ -35,6 +38,7 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _greetingCtrl.dispose();
     super.dispose();
   }
 
@@ -57,75 +61,42 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
     }
   }
 
-  Future<void> _sendRequest(UserModel user) async {
+  /// 展开打招呼输入框（内联方式，避免 showDialog + TextField 导致 InheritedWidget 断言错误）
+  void _showGreetingForm(UserModel user) {
     final l = AppLocalizations.of(context)!;
-    final messageController = TextEditingController();
+    _greetingCtrl.text = l.get('default_greeting');
+    setState(() => _pendingUserId = user.id);
+  }
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(l.get('send_request')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              user.nickname,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: messageController,
-              decoration: InputDecoration(
-                hintText: l.get('request_message_hint'),
-                hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textHint),
-              ),
-              maxLines: 2,
-              maxLength: 50,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l.get('cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l.get('confirm')),
-          ),
-        ],
-      ),
-    );
+  void _cancelGreeting() {
+    setState(() => _pendingUserId = null);
+  }
 
-    if (confirmed != true || !mounted) {
-      messageController.dispose();
-      return;
-    }
-
-    final message = messageController.text.trim();
-    messageController.dispose();
+  Future<void> _confirmSendRequest(UserModel user) async {
+    final message = _greetingCtrl.text.trim();
+    setState(() => _isSendingRequest = true);
 
     final friendProvider = context.read<FriendProvider>();
     final error = await friendProvider.sendRequest(
-          toId: user.id,
-          message: message,
-        );
+      toId: user.id,
+      message: message,
+    );
 
     if (!mounted) return;
 
+    setState(() {
+      _isSendingRequest = false;
+      _pendingUserId = null;
+    });
+
+    final l = AppLocalizations.of(context)!;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(error != null ? l.get(error) : l.get('request_sent')),
+        content: Text(error ?? l.get('request_sent')),
         duration: const Duration(seconds: 2),
       ),
     );
 
-    // 刷新好友列表，更新搜索结果中的 "已是好友" 状态
     if (error == null) {
       friendProvider.loadFriends();
     }
@@ -204,6 +175,7 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
 
   Widget _buildUserItem(UserModel user, FriendProvider friendProvider, AppLocalizations l) {
     final isFriend = friendProvider.isFriend(user.id);
+    final isShowingGreeting = _pendingUserId == user.id;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -214,51 +186,103 @@ class _FriendSearchPageState extends State<FriendSearchPage> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
           children: [
-            _buildAvatar(user.avatar, user.nickname, 40),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.nickname,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: AppTheme.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                _buildAvatar(user.avatar, user.nickname, 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.nickname,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'ID: ${user.displayId}',
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
+                ),
+                const SizedBox(width: 8),
+                if (isFriend)
                   Text(
-                    'ID: ${user.displayId}',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+                    l.get('already_friends'),
+                    style: const TextStyle(fontSize: 13, color: AppTheme.textHint),
+                  )
+                else if (!isShowingGreeting)
+                  OutlinedButton(
+                    onPressed: () => _showGreetingForm(user),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primaryColor,
+                      side: const BorderSide(color: AppTheme.primaryColor, width: 1),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      minimumSize: Size.zero,
+                      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    child: Text(l.get('add_friend')),
+                  ),
+              ],
+            ),
+            // 内联打招呼表单（避免 showDialog + TextField 导致 InheritedWidget 断言错误）
+            if (isShowingGreeting) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _greetingCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: l.get('request_message_hint'),
+                  hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textHint),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                maxLines: 2,
+                maxLength: 50,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _cancelGreeting,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.textSecondary,
+                        side: const BorderSide(color: AppTheme.dividerColor),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      child: Text(l.get('cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isSendingRequest ? null : () => _confirmSendRequest(user),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      child: _isSendingRequest
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(l.get('send_request')),
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            if (isFriend)
-              Text(
-                l.get('already_friends'),
-                style: const TextStyle(fontSize: 13, color: AppTheme.textHint),
-              )
-            else
-              OutlinedButton(
-                onPressed: () => _sendRequest(user),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryColor,
-                  side: const BorderSide(color: AppTheme.primaryColor, width: 1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  minimumSize: Size.zero,
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                child: Text(l.get('add_friend')),
-              ),
+            ],
           ],
         ),
       ),

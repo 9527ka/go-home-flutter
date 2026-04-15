@@ -4,6 +4,7 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/friend.dart';
+import '../../providers/conversation_provider.dart';
 import '../../providers/friend_provider.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -19,7 +20,7 @@ class _FriendListPageState extends State<FriendListPage> {
   void initState() {
     super.initState();
     final friendProvider = context.read<FriendProvider>();
-    friendProvider.loadFriends();
+    friendProvider.loadFriendsIfEmpty();
     friendProvider.fetchRequestCount();
   }
 
@@ -52,6 +53,10 @@ class _FriendListPageState extends State<FriendListPage> {
     final error = await context.read<FriendProvider>().removeFriend(friend.userId);
     if (!mounted) return;
 
+    if (error == null) {
+      // 删除好友成功，同时删除会话
+      context.read<ConversationProvider>().removeConversation(friend.userId, 'private');
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(error != null ? l.get(error) : l.get('friend_removed')),
@@ -168,6 +173,7 @@ class _FriendListPageState extends State<FriendListPage> {
           'friendName': displayName,
           'friendAvatar': friend.avatar,
           'friendUserCode': friend.userCode,
+          'friendIsOfficial': friend.isOfficialService,
         }),
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -180,7 +186,7 @@ class _FriendListPageState extends State<FriendListPage> {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                AvatarWidget(avatarPath: friend.avatar, name: displayName, size: 36),
+                AvatarWidget(avatarPath: friend.avatar, name: displayName, size: 36, isOfficial: friend.isOfficialService),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

@@ -131,10 +131,11 @@ class WsChatManager {
     _setConnectionState(WsConnectionState.disconnected);
   }
 
-  /// 手动触发重连（UI 上的"重连"按钮）
+  /// 手动触发重连（UI 上的"重连"按钮 / 通话发起时强制刷新认证）
   void manualReconnect() {
     debugPrint('[WS] Manual reconnect requested');
     _cleanup();
+    _setConnectionState(WsConnectionState.disconnected);
     _reconnectAttempts = 0;
     _manualDisconnect = false;
     connect();

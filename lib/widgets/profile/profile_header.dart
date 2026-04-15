@@ -38,8 +38,8 @@ class ProfileHeader extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
 
     return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 16,
+      padding: const EdgeInsets.only(
+        top: 20,
         left: 24,
         right: 24,
         bottom: 28,
@@ -57,33 +57,6 @@ class ProfileHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Top navigation bar
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  l.get('profile'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white),
-                ),
-              ),
-              const SizedBox(width: 36),
-            ],
-          ),
-
-          const SizedBox(height: 24),
 
           // Avatar row: avatar + user info + sign-in button
           Row(
@@ -244,6 +217,7 @@ class ProfileHeader extends StatelessWidget {
 
   /// Sign-in button (beside the avatar).
   Widget _buildSignInButton(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final signProvider = context.watch<SignProvider>();
     final signedToday = signProvider.signedToday;
     final streak = signProvider.currentStreak;
@@ -269,7 +243,7 @@ class ProfileHeader extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              signedToday ? '\u5DF2\u7B7E\u5230' : '\u7B7E\u5230',
+              signedToday ? l.get('signed_btn') : l.get('sign_btn'),
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -278,7 +252,7 @@ class ProfileHeader extends StatelessWidget {
             ),
             if (streak > 0)
               Text(
-                '\u8FDE\u7EED${streak}\u5929',
+                l.get('streak_short').replaceAll('{n}', '$streak'),
                 style: TextStyle(
                   fontSize: 9,
                   color: signedToday ? Colors.white.withOpacity(0.7) : AppTheme.textHint,

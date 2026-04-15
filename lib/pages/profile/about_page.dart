@@ -167,11 +167,6 @@ class AboutPage extends StatelessWidget {
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
-            ),
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
@@ -181,11 +176,9 @@ class AboutPage extends StatelessWidget {
               ),
             ],
           ),
-          child: const Center(
-            child: Text(
-              '🏠',
-              style: TextStyle(fontSize: 36),
-            ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Image.asset('assets/icon/app_icon.png', width: 80, height: 80),
           ),
         ),
 

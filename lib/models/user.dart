@@ -8,6 +8,7 @@ class UserModel {
   final String contactPhone;
   final int status;
   final int authProvider; // 1=密码登录 2=Apple登录
+  final int userType; // 0=普通用户 1=官方客服
 
   UserModel({
     required this.id,
@@ -19,6 +20,7 @@ class UserModel {
     this.contactPhone = '',
     this.status = 1,
     this.authProvider = 1,
+    this.userType = 0,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -32,8 +34,11 @@ class UserModel {
       contactPhone: json['contact_phone'] ?? '',
       status: json['status'] ?? 1,
       authProvider: json['auth_provider'] ?? 1,
+      userType: json['user_type'] ?? 0,
     );
   }
+
+  bool get isOfficialService => userType == 1;
 
   /// 对外展示的用户编号（优先 userCode，兜底显示 ID）
   String get displayId => userCode.isNotEmpty ? userCode : 'GH$id';
@@ -49,6 +54,7 @@ class UserModel {
       'contact_phone': contactPhone,
       'status': status,
       'auth_provider': authProvider,
+      'user_type': userType,
     };
   }
 }

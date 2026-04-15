@@ -3,7 +3,7 @@ import '../utils/storage.dart';
 
 /// 语言切换状态管理
 class LocaleProvider extends ChangeNotifier {
-  Locale _locale = const Locale('en', 'US');
+  Locale _locale = const Locale('zh', 'CN');
 
   Locale get locale => _locale;
 

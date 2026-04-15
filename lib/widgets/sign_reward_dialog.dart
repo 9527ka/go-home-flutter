@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/currency.dart';
 import '../config/theme.dart';
+import '../l10n/app_localizations.dart';
 import '../models/sign_result.dart';
 
 /// 签到成功奖励弹窗
@@ -47,6 +48,7 @@ class _SignRewardDialogState extends State<SignRewardDialog>
   Widget build(BuildContext context) {
     final result = widget.result;
     final isBonus = result.isBonus;
+    final l = AppLocalizations.of(context)!;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -79,7 +81,7 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '${result.bonusRate}x 暴击!',
+                      '${result.bonusRate}x ${l.get("bonus_critical")}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -109,9 +111,9 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                 const SizedBox(height: 16),
 
                 // 签到成功文字
-                const Text(
-                  '签到成功',
-                  style: TextStyle(
+                Text(
+                  l.get('sign_success'),
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.textPrimary,
@@ -120,7 +122,7 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                 const SizedBox(height: 8),
 
                 Text(
-                  '第 ${result.dayInCycle} 天',
+                  l.get('day_n').replaceAll('{n}', '${result.dayInCycle}'),
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppTheme.textSecondary,
@@ -142,7 +144,9 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                 if (isBonus) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '基础 ${CurrencyConfig.formatNumber(result.baseReward)} x ${result.bonusRate} 倍',
+                    l.get('base_reward_multiply')
+                        .replaceAll('{base}', CurrencyConfig.formatNumber(result.baseReward))
+                        .replaceAll('{rate}', '${result.bonusRate}'),
                     style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
@@ -159,10 +163,10 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                     color: AppTheme.scaffoldBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
-                    '奖励已进入待释放爱心值，每日自动释放10%到可用爱心值',
+                  child: Text(
+                    l.get('reward_release_hint'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: AppTheme.textSecondary,
                       height: 1.5,
@@ -185,7 +189,7 @@ class _SignRewardDialogState extends State<SignRewardDialog>
                       ),
                       elevation: 0,
                     ),
-                    child: const Text('知道了'),
+                    child: Text(l.get('got_it')),
                   ),
                 ),
               ],

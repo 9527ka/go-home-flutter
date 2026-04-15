@@ -54,13 +54,16 @@ lib/
 git clone https://github.com/<your-username>/go-home.git
 cd go-home/flutter_app
 
+export PATH="$PATH:/Users/lang/flutter/bin"
+
 # 2. 安装依赖
 flutter pub get
 
 # 3. 运行项目
 flutter run
 ```
-
+flutter build apk --release 2>&1
+flutter build ios --release 2>&1
 > 后端 API 地址在 `lib/config/api.dart` 中配置，开发环境默认连接 `http://127.0.0.1:8080`。
 
 ## 如何参与贡献

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,9 +6,10 @@ import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/wallet_provider.dart';
-import '../../config/currency.dart';
 import '../../models/wallet_transaction.dart';
 import '../../widgets/coin_icon.dart';
+
+bool get _showWithdraw => kIsWeb || defaultTargetPlatform == TargetPlatform.android;
 
 class WalletPage extends StatefulWidget {
   const WalletPage({super.key});
@@ -190,7 +192,7 @@ class _WalletPageState extends State<WalletPage> {
             if ((provider.wallet?.rewardFrozenBalance ?? 0) > 0) ...[
               const SizedBox(height: 2),
               Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('奖励待释放: ', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.7))),
+                Text('${l.get('reward_frozen')}: ', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.7))),
                 CoinAmount(
                   amount: provider.wallet?.rewardFrozenBalance ?? 0,
                   iconSize: 12,
@@ -219,17 +221,19 @@ class _WalletPageState extends State<WalletPage> {
               }),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _actionButton(
-              icon: Icons.arrow_circle_up_outlined,
-              label: l.get('withdraw'),
-              color: AppTheme.primaryColor,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.walletWithdraw).then((_) {
-                context.read<WalletProvider>().refresh();
-              }),
+          if (_showWithdraw) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionButton(
+                icon: Icons.arrow_circle_up_outlined,
+                label: l.get('withdraw'),
+                color: AppTheme.primaryColor,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.walletWithdraw).then((_) {
+                  context.read<WalletProvider>().refresh();
+                }),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

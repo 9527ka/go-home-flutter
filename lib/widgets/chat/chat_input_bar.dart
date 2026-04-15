@@ -150,18 +150,20 @@ class ChatInputBar extends StatelessWidget {
           // Send / + media button
           if (hasInputText)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
+              padding: const EdgeInsets.only(bottom: 8, left: 4),
+              child: GestureDetector(
+                onTap: onSend,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.send_rounded,
-                      color: Colors.white, size: 20),
-                  onPressed: onSend,
+                  child: const Icon(Icons.send_rounded,
+                      color: Colors.white, size: 18),
                 ),
               ),
             )
@@ -296,20 +298,22 @@ class ChatInputBar extends StatelessWidget {
 
           // Send button (always visible)
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isDisconnected
-                      ? [Colors.grey.shade400, Colors.grey.shade500]
-                      : const [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GestureDetector(
+              onTap: isDisconnected ? null : onSend,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isDisconnected
+                        ? [Colors.grey.shade400, Colors.grey.shade500]
+                        : const [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.send_rounded,
-                    color: Colors.white, size: 20),
-                onPressed: isDisconnected ? null : onSend,
+                child: const Icon(Icons.send_rounded,
+                    color: Colors.white, size: 18),
               ),
             ),
           ),

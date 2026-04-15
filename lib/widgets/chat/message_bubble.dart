@@ -10,6 +10,10 @@ class MessageBubble extends StatelessWidget {
   final Widget content;
   final VoidCallback? onLongPress;
   final VoidCallback? onAvatarTap;
+  final VoidCallback? onAvatarLongPress;
+
+  /// 发送状态徽标（如失败红感叹号、发送中菊花），仅对 isMe 消息渲染在气泡左侧
+  final Widget? statusBadge;
 
   const MessageBubble({
     super.key,
@@ -20,6 +24,8 @@ class MessageBubble extends StatelessWidget {
     required this.content,
     this.onLongPress,
     this.onAvatarTap,
+    this.onAvatarLongPress,
+    this.statusBadge,
   });
 
   @override
@@ -52,9 +58,16 @@ class MessageBubble extends StatelessWidget {
                 if (!isMe) ...[
                   GestureDetector(
                     onTap: onAvatarTap,
+                    onLongPress: onAvatarLongPress,
                     child: avatar,
                   ),
                   const SizedBox(width: 8),
+                ],
+                if (isMe && statusBadge != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6, top: 10),
+                    child: statusBadge!,
+                  ),
                 ],
                 Flexible(child: content),
                 if (isMe) ...[

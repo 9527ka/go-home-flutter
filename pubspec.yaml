@@ -1,7 +1,7 @@
 name: go_home
 description: 回家了么 - 寻亲平台客户端
 publish_to: 'none'
-version: 1.0.3+4
+version: 1.0.4+5
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -74,7 +74,32 @@ dependencies:
   # 权限请求
   permission_handler: ^11.0.0
 
+  # 定位
+  geolocator: ^13.0.2
+
+  # 地图（Apple Maps）
+  apple_maps_flutter: ^1.4.0
+
+  # Apple In-App Purchase
+  in_app_purchase: ^3.2.0
+
   audio_session: ^0.1.19
+
+  # 二维码生成（群邀请）
+  qr_flutter: ^4.1.0
+
+  # SVG 图标渲染
+  flutter_svg: ^2.0.10
+
+  # 腾讯云 TRTC / RTC Engine（私聊语音通话）
+  # tencent_trtc_cloud 已废弃（native SDK v10.7 过旧），改用新 SDK
+  tencent_rtc_sdk: ^13.2.1
+
+  # 通话振动
+  vibration: ^2.0.0
+
+  # UUID（通话 call_id 生成）
+  uuid: ^4.3.0
 
 dependency_overrides:
   # 修复 objective_c 9.3.0 在模拟器上 native assets 加载失败的问题
@@ -92,6 +117,7 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/icon/
 
 flutter_launcher_icons:
   android: false

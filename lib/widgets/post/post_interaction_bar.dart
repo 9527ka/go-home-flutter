@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Interaction bar with like, share, and bookmark buttons.
 class PostInteractionBar extends StatelessWidget {
@@ -49,7 +50,7 @@ class PostInteractionBar extends StatelessWidget {
           ),
           _interactionButton(
             icon: isFavorited ? Icons.bookmark : Icons.bookmark_border,
-            label: '收藏',
+            label: AppLocalizations.of(context)!.get('favorite'),
             color: isFavorited ? AppTheme.primaryColor : AppTheme.textSecondary,
             onTap: onFavorite,
           ),

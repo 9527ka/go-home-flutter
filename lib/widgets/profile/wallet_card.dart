@@ -34,15 +34,10 @@ class WalletCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Heart icon
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.favorite, size: 26, color: Colors.white),
+            // 爱心币图标
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset('assets/icon/gold.png', width: 48, height: 48),
             ),
             const SizedBox(width: 16),
             // Balance info
@@ -60,22 +55,38 @@ class WalletCard extends StatelessWidget {
                     iconSize: 20,
                     textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white),
                   ),
+                  // subtitle 固定显示（单行，太长自动省略）
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      l.get('my_wallet_subtitle'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.8)),
+                    ),
+                  ),
+                  // 待释放金额另起一行，避免英文文案在卡片内挤出（BOTTOM OVERFLOWED）
                   if (frozenReward > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text('${l.get('my_wallet_subtitle')}  |  \u5F85\u91CA\u653E: ', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.8))),
-                        CoinAmount(
-                          amount: frozenReward,
-                          iconSize: 10,
-                          textStyle: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.8)),
-                        ),
-                      ]),
-                    )
-                  else
-                    Text(
-                      l.get('my_wallet_subtitle'),
-                      style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.8)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              '${l.get('frozen')}: ',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.8)),
+                            ),
+                          ),
+                          CoinAmount(
+                            amount: frozenReward,
+                            iconSize: 10,
+                            textStyle: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.8)),
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),

@@ -22,6 +22,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
+import '../../services/call_signaling_service.dart';
 import '../../services/chat_service.dart';
 import '../../services/pm_service.dart';
 import '../../services/wallet_service.dart';
@@ -49,6 +50,7 @@ class PrivateChatPage extends StatefulWidget {
   final String friendName;
   final String friendAvatar;
   final String friendUserCode;
+  final bool friendIsOfficial;
 
   const PrivateChatPage({
     super.key,
@@ -56,7 +58,18 @@ class PrivateChatPage extends StatefulWidget {
     required this.friendName,
     this.friendAvatar = '',
     this.friendUserCode = '',
+    this.friendIsOfficial = false,
   });
+
+  /// 清除指定私聊的进程内缓存（清空聊天记录时调用）
+  static void invalidateCache(int friendId) {
+    _PrivateChatPageState._chatCaches.remove(friendId);
+  }
+
+  /// 清除所有私聊缓存（登出 / 切换账号时调用）
+  static void invalidateAllCaches() {
+    _PrivateChatPageState._chatCaches.clear();
+  }
 
   @override
   State<PrivateChatPage> createState() => _PrivateChatPageState();
@@ -70,6 +83,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   final _imagePicker = ImagePicker();
   final _audioRecorder = AudioRecorder();
   final _audioPlayer = AudioPlayer();
+
+  // ===== 进程内消息缓存（页面导航不丢失，进程被杀掉后自动清空） =====
+  static final Map<int, _ChatCache> _chatCaches = {};
 
   final List<ChatMessageModel> _messages = [];
   final Set<int> _messageIds = {}; // 消息去重
@@ -129,7 +145,16 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   @override
+  void deactivate() {
+    // 在 deactivate 中清除活跃会话标记，此时 context 仍有效
+    context.read<ConversationProvider>().clearActiveConversation();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    // 离开页面时缓存消息（进程不杀掉则下次进入无需重新加载）
+    _saveChatCache();
     _removeRecordOverlay();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
@@ -138,10 +163,6 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _unregisterWsHandler();
-    // 清除活跃会话标记
-    try {
-      context.read<ConversationProvider>().clearActiveConversation();
-    } catch (_) {}
     // 释放 WebSocket 引用计数
     try {
       context.read<ChatProvider>().onPageLeave();
@@ -153,13 +174,39 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   void _registerWsHandler() {
     final chatProvider = context.read<ChatProvider>();
     chatProvider.registerHandler('private_message', _onPrivateMessage);
+    chatProvider.registerHandler('error', _onServerError);
   }
 
   void _unregisterWsHandler() {
     try {
       final chatProvider = context.read<ChatProvider>();
       chatProvider.removeHandler('private_message', _onPrivateMessage);
+      chatProvider.removeHandler('error', _onServerError);
     } catch (_) {}
+  }
+
+  // 生成一个唯一的 client_msg_id（用于匹配乐观消息与服务端回执/错误）
+  int _clientSeq = 0;
+  String _nextClientMsgId() {
+    _clientSeq++;
+    return 'c${DateTime.now().microsecondsSinceEpoch}_$_clientSeq';
+  }
+
+  /// 服务端错误消息：若带 client_msg_id，将对应乐观消息标为失败
+  void _onServerError(Map<String, dynamic> data) {
+    final clientMsgId = data['client_msg_id'] as String?;
+    if (clientMsgId == null || clientMsgId.isEmpty) return;
+    final errorCode = (data['error_code'] as String?) ?? '';
+    if (!mounted) return;
+    setState(() {
+      final idx = _messages.lastIndexWhere((m) => m.clientMsgId == clientMsgId);
+      if (idx >= 0) {
+        _messages[idx] = _messages[idx].copyWith(
+          sendStatus: SendStatus.failed,
+          errorCode: errorCode.isEmpty ? null : errorCode,
+        );
+      }
+    });
   }
 
   void _onPrivateMessage(Map<String, dynamic> data) {
@@ -173,6 +220,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     if (!isFromFriend && !isSentToFriend) return;
 
     final msg = ChatMessageModel.fromJson(data);
+    final clientMsgId = data['client_msg_id'] as String?;
 
     // 去重：防止与乐观本地消息或历史加载重复
     if (msg.id != null && _messageIds.contains(msg.id)) return;
@@ -185,14 +233,23 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     if (mounted) {
       setState(() {
         if (msg.id != null) _messageIds.add(msg.id!);
-        // 自己发的消息已经乐观添加过（无 id），用服务端回传替换
-        if (isSentToFriend && msg.id != null) {
-          // 尝试找到最后一条无 id 的本地乐观消息并替换
-          final localIdx = _messages.lastIndexWhere(
-            (m) => m.id == null && m.userId == currentUserId && m.content == msg.content,
-          );
+        // 自己发的消息：优先用 client_msg_id 匹配乐观消息，回填服务端 id + 标 sent
+        if (isSentToFriend) {
+          int localIdx = -1;
+          if (clientMsgId != null && clientMsgId.isNotEmpty) {
+            localIdx = _messages.lastIndexWhere((m) => m.clientMsgId == clientMsgId);
+          }
+          if (localIdx < 0) {
+            // 兼容旧路径：根据 content+无 id 匹配
+            localIdx = _messages.lastIndexWhere(
+              (m) => m.id == null && m.userId == currentUserId && m.content == msg.content,
+            );
+          }
           if (localIdx >= 0) {
-            _messages[localIdx] = msg;
+            _messages[localIdx] = msg.copyWith(
+              clientMsgId: _messages[localIdx].clientMsgId,
+              sendStatus: SendStatus.sent,
+            );
             return;
           }
         }
@@ -203,6 +260,23 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Future<void> _loadHistory() async {
+    // 优先使用进程内缓存（页面导航不重新请求，仅进程被杀后才从服务端加载）
+    final cache = _chatCaches[widget.friendId];
+    if (cache != null) {
+      setState(() {
+        _messages.clear();
+        _messageIds.clear();
+        _messages.addAll(cache.messages);
+        _messageIds.addAll(cache.messageIds);
+        _hasMore = cache.hasMore;
+        _isLoading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom(animate: false);
+      });
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       // 读取清空时间戳，过滤掉清空之前的消息
@@ -213,7 +287,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         clearedAt = DateTime.tryParse(clearedAtStr);
       }
 
-      final data = await _pmService.getHistory(friendId: widget.friendId, limit: 50);
+      final data = await _pmService.getHistory(friendId: widget.friendId, limit: 20);
       final list = data['list'] as List? ?? [];
       if (mounted) {
         setState(() {
@@ -242,6 +316,17 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     }
   }
 
+  /// 保存当前消息到进程内缓存
+  void _saveChatCache() {
+    if (_messages.isNotEmpty) {
+      _chatCaches[widget.friendId] = _ChatCache(
+        messages: List.of(_messages),
+        messageIds: Set.of(_messageIds),
+        hasMore: _hasMore,
+      );
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore || _messages.isEmpty) return;
     _isLoadingMore = true;
@@ -253,7 +338,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       final data = await _pmService.getHistory(
         friendId: widget.friendId,
         beforeId: firstMsgId,
-        limit: 50,
+        limit: 20,
       );
       final list = data['list'] as List? ?? [];
       if (mounted) {
@@ -335,7 +420,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     if (text.isEmpty) return;
 
     final chatProvider = context.read<ChatProvider>();
-    chatProvider.sendPrivateMessage(widget.friendId, text);
+    final clientMsgId = _nextClientMsgId();
+    chatProvider.sendPrivateMessage(widget.friendId, text, clientMsgId: clientMsgId);
 
     // 更新会话列表
     context.read<ConversationProvider>().onMessageSent(
@@ -346,7 +432,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       avatar: widget.friendAvatar,
     );
 
-    // 乐观本地添加
+    // 乐观本地添加（sending 状态，等待服务端回执或 error）
     final user = auth.user!;
     final localMsg = ChatMessageModel(
       userId: user.id,
@@ -354,6 +440,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       avatar: user.avatar,
       content: text,
       createdAt: DateTime.now().toIso8601String(),
+      clientMsgId: clientMsgId,
+      sendStatus: SendStatus.sending,
     );
     setState(() {
       _messages.add(localMsg);
@@ -443,12 +531,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   void _sendMediaLocal(String mediaType, Map<String, dynamic> result) {
     final chatProvider = context.read<ChatProvider>();
+    final clientMsgId = _nextClientMsgId();
     chatProvider.sendPrivateMediaMessage(
       toUserId: widget.friendId,
       msgType: mediaType,
       mediaUrl: result['url'] ?? '',
       thumbUrl: result['thumb_url'] ?? '',
       mediaInfo: result['media_info'],
+      clientMsgId: clientMsgId,
     );
 
     // 更新会话列表
@@ -467,7 +557,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       avatar: widget.friendAvatar,
     );
 
-    // 乐观本地添加
+    // 乐观本地添加（sending 状态）
     final auth = context.read<AuthProvider>();
     final user = auth.user!;
     final localMsg = ChatMessageModel(
@@ -480,8 +570,13 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       ),
       mediaUrl: result['url'] ?? '',
       thumbUrl: result['thumb_url'] ?? '',
+      mediaInfo: result['media_info'] is Map<String, dynamic>
+          ? result['media_info'] as Map<String, dynamic>
+          : null,
       content: '',
       createdAt: DateTime.now().toIso8601String(),
+      clientMsgId: clientMsgId,
+      sendStatus: SendStatus.sending,
     );
     setState(() {
       _messages.add(localMsg);
@@ -661,6 +756,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                     friendName: widget.friendName,
                     friendAvatar: widget.friendAvatar,
                     friendUserCode: widget.friendUserCode,
+                    isOfficial: widget.friendIsOfficial,
                     onClearMessages: () async {
                       // 持久化清空时间戳，下次加载历史时过滤
                       final prefs = await SharedPreferences.getInstance();
@@ -668,6 +764,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                         'chat_cleared_at_${widget.friendId}',
                         DateTime.now().toIso8601String(),
                       );
+                      // 清除进程内缓存，避免缓存里的旧消息在下次进入时复现
+                      _chatCaches.remove(widget.friendId);
                       setState(() {
                         _messages.clear();
                         _messageIds.clear();
@@ -757,7 +855,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                   },
                   config: Config(
                     columns: 8,
-                    emojiSizeMax: 28 * (defaultTargetPlatform == TargetPlatform.iOS ? 1.3 : 1.0),
+                    emojiSizeMax: 22 * (defaultTargetPlatform == TargetPlatform.iOS ? 1.3 : 1.0),
                     initCategory: Category.SMILEYS,
                     indicatorColor: AppTheme.primaryColor,
                     iconColorSelected: AppTheme.primaryColor,
@@ -827,32 +925,156 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       onSendRedPacket: context.read<AppConfigProvider>().walletEnabled
           ? _showRedPacketDialog
           : null,
-      pickImageLabel: l.get('media_image'),
-      takePhotoLabel: l.get('media_camera'),
-      pickVideoLabel: l.get('media_video'),
+      onVoiceCall: defaultTargetPlatform == TargetPlatform.iOS ? null : _startVoiceCall,
+      pickImageLabel: l.get('chat_album'),
+      takePhotoLabel: l.get('take_photo'),
+      pickVideoLabel: l.get('chat_video'),
       redPacketLabel: l.get('red_packet'),
+      voiceCallLabel: l.get('voice_call'),
     );
+  }
+
+  /// 发起 1v1 语音通话（第一次点击运行 TRTC 独立测试，第二次正常拨号）
+  bool _trtcTestPassed = false;
+
+  Future<void> _startVoiceCall() async {
+    setState(() => _showMediaPanel = false);
+
+    // ── 首次点击：运行 TRTC 独立进房测试 ──
+    if (!_trtcTestPassed) {
+      await CallSignalingService.instance.testEnterRoom();
+      _trtcTestPassed = true;
+      return;
+    }
+
+    // ── 第二次点击：正常发起通话 ──
+    final l = AppLocalizations.of(context)!;
+    final call = CallSignalingService.instance;
+    call.ensureAttached(context.read<ChatProvider>());
+    final err = await call.invite(
+      toUserId: widget.friendId,
+      peerNickname: widget.friendName,
+      peerAvatar: widget.friendAvatar,
+    );
+    if (err != CallInviteError.none && mounted) {
+      String msg;
+      switch (err) {
+        case CallInviteError.alreadyInCall:
+          msg = l.get('voice_call_init_failed') + ' (already in call)';
+          break;
+        case CallInviteError.wsNotAuthenticated:
+          final ws = context.read<ChatProvider>().connectionState;
+          msg = l.get('voice_call_init_failed') + ' (WS: $ws)';
+          break;
+        case CallInviteError.micPermissionDenied:
+          msg = l.get('voice_call_permission_denied');
+          break;
+        case CallInviteError.userSigFailed:
+          msg = l.get('voice_call_init_failed') + ' (UserSig failed)';
+          break;
+        case CallInviteError.rtcInitFailed:
+          msg = l.get('voice_call_init_failed') + ' (TRTC init failed)';
+          break;
+        case CallInviteError.none:
+          return;
+      }
+      Fluttertoast.showToast(msg: msg, toastLength: Toast.LENGTH_LONG);
+    }
   }
 
   // ===== 消息气泡 =====
 
   Widget _buildMessageBubble(ChatMessageModel msg, int? currentUserId) {
     final isMe = currentUserId != null && msg.userId == currentUserId;
+    // 对方消息：如果 API 未返回头像，用页面传入的好友头像兜底
+    final avatarPath = msg.avatar.isNotEmpty
+        ? msg.avatar
+        : (isMe ? '' : widget.friendAvatar);
 
     return MessageBubble(
       nickname: msg.nickname,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
-      avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
+      avatar: AvatarWidget(avatarPath: avatarPath, name: msg.nickname, size: 36, isOfficial: !isMe && widget.friendIsOfficial),
       onLongPress: () => _showMessageActions(msg, isMe),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
         userId: msg.userId,
         nickname: msg.nickname,
-        avatar: msg.avatar,
+        avatar: avatarPath,
         userCode: msg.userCode,
+        isOfficial: widget.friendIsOfficial,
       ),
       content: _buildBubbleContent(msg, isMe),
+      statusBadge: isMe ? _buildStatusBadge(msg) : null,
+    );
+  }
+
+  /// 自己发出的消息：发送中显示转圈；失败显示红色感叹号（点击弹失败原因）
+  Widget? _buildStatusBadge(ChatMessageModel msg) {
+    switch (msg.sendStatus) {
+      case SendStatus.sending:
+        return const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.8,
+            color: AppTheme.textHint,
+          ),
+        );
+      case SendStatus.failed:
+        return GestureDetector(
+          onTap: () => _showSendFailedDialog(msg),
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: const BoxDecoration(
+              color: AppTheme.dangerColor,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.priority_high, size: 14, color: Colors.white),
+          ),
+        );
+      case SendStatus.sent:
+        return null;
+    }
+  }
+
+  /// 发送失败弹窗，根据 error_code 显示对应提示
+  void _showSendFailedDialog(ChatMessageModel msg) {
+    final l = AppLocalizations.of(context)!;
+    final isNotFriend = msg.errorCode == 'NOT_FRIEND';
+    final title = l.get('chat_send_failed_not_friend_title');
+    final body = isNotFriend
+        ? l.get('chat_send_failed_not_friend')
+        : l.get('chat_send_failed_generic');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l.get('cancel')),
+          ),
+          if (isNotFriend)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                UserProfilePage.show(
+                  context,
+                  userId: widget.friendId,
+                  nickname: widget.friendName,
+                  avatar: widget.friendAvatar,
+                  userCode: widget.friendUserCode,
+                );
+              },
+              child: Text(l.get('add_friend')),
+            ),
+        ],
+      ),
     );
   }
 
@@ -994,13 +1216,49 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       context: context,
       builder: (_) => RedPacketSendDialog(targetType: 2, targetId: widget.friendId),
     ).then((result) {
-      if (result != null) {
-        final chatProvider = context.read<ChatProvider>();
-        final redPacketId = result is Map ? (result['id'] ?? 0) : 0;
-        if (redPacketId > 0) {
-          chatProvider.sendPrivateRedPacketMessage(widget.friendId, redPacketId);
-        }
-      }
+      if (!mounted || result == null) return;
+      final redPacketId = result is Map ? (result['id'] ?? 0) : 0;
+      if (redPacketId <= 0) return;
+
+      final chatProvider = context.read<ChatProvider>();
+      final clientMsgId = _nextClientMsgId();
+      chatProvider.sendPrivateRedPacketMessage(
+        widget.friendId,
+        redPacketId,
+        clientMsgId: clientMsgId,
+      );
+
+      // 乐观本地添加红包气泡（避免"发送后要退出重进才显示"）
+      final auth = context.read<AuthProvider>();
+      final user = auth.user;
+      if (user == null) return;
+      final greeting = (result is Map && result['greeting'] != null)
+          ? result['greeting'].toString()
+          : '';
+      final localMsg = ChatMessageModel(
+        userId: user.id,
+        nickname: user.nickname,
+        avatar: user.avatar,
+        msgType: ChatMsgType.redPacket,
+        content: jsonEncode({'red_packet_id': redPacketId, 'greeting': greeting}),
+        createdAt: DateTime.now().toIso8601String(),
+        clientMsgId: clientMsgId,
+        sendStatus: SendStatus.sending,
+      );
+      setState(() {
+        _messages.add(localMsg);
+      });
+      // 更新会话列表最后一条
+      final l = AppLocalizations.of(context)!;
+      context.read<ConversationProvider>().onMessageSent(
+        targetId: widget.friendId,
+        targetType: 'private',
+        content: '[${l.get("red_packet")}]',
+        msgType: 'red_packet',
+        name: widget.friendName,
+        avatar: widget.friendAvatar,
+      );
+      _scrollToBottomIfNeeded();
     });
   }
 
@@ -1123,6 +1381,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       return '';
     }
   }
+}
+
+/// 进程内消息缓存（仅存活于内存，进程被杀掉后自动清空）
+class _ChatCache {
+  final List<ChatMessageModel> messages;
+  final Set<int> messageIds;
+  final bool hasMore;
+  _ChatCache({required this.messages, required this.messageIds, required this.hasMore});
 }
 
 /// 简单视频播放器

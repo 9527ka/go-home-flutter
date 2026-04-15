@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
-import '../../providers/chat_provider.dart';
 import '../../providers/friend_provider.dart';
+import '../../widgets/avatar_widget.dart';
 
 /// User profile bottom sheet displayed when tapping a user's avatar in chat.
 class UserProfilePage extends StatefulWidget {
@@ -13,6 +13,7 @@ class UserProfilePage extends StatefulWidget {
   final String nickname;
   final String avatar;
   final String userCode;
+  final bool isOfficial;
 
   const UserProfilePage({
     super.key,
@@ -20,6 +21,7 @@ class UserProfilePage extends StatefulWidget {
     required this.nickname,
     required this.avatar,
     this.userCode = '',
+    this.isOfficial = false,
   });
 
   /// Show the user profile bottom sheet.
@@ -29,6 +31,7 @@ class UserProfilePage extends StatefulWidget {
     required String nickname,
     required String avatar,
     String userCode = '',
+    bool isOfficial = false,
   }) {
     showModalBottomSheet(
       context: context,
@@ -42,6 +45,7 @@ class UserProfilePage extends StatefulWidget {
         nickname: nickname,
         avatar: avatar,
         userCode: userCode,
+        isOfficial: isOfficial,
       ),
     );
   }
@@ -52,7 +56,6 @@ class UserProfilePage extends StatefulWidget {
 
 class _UserProfilePageState extends State<UserProfilePage> {
   bool _isSendingRequest = false;
-  bool _isBlocking = false;
   bool _showGreetingForm = false;
   late final TextEditingController _greetingCtrl;
 
@@ -67,23 +70,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
     _greetingCtrl.dispose();
     super.dispose();
   }
-
-  /// System avatar color and icon mapping
-  static const _sysAvatarMap = <String, List<dynamic>>{
-    '/system/avatars/avatar_1.svg': [Color(0xFF4A90D9), Icons.person],
-    '/system/avatars/avatar_2.svg': [Color(0xFF5BA0E8), Icons.person_outline],
-    '/system/avatars/avatar_3.svg': [Color(0xFF34A853), Icons.face],
-    '/system/avatars/avatar_4.svg': [
-      Color(0xFF8B5CF6),
-      Icons.sentiment_satisfied_alt
-    ],
-    '/system/avatars/avatar_5.svg': [Color(0xFFF97316), Icons.emoji_people],
-    '/system/avatars/avatar_6.svg': [Color(0xFFEC4899), Icons.face_3],
-    '/system/avatars/avatar_7.svg': [Color(0xFFF43F5E), Icons.face_4],
-    '/system/avatars/avatar_8.svg': [Color(0xFFA855F7), Icons.face_2],
-    '/system/avatars/avatar_9.svg': [Color(0xFF06B6D4), Icons.face_5],
-    '/system/avatars/avatar_10.svg': [Color(0xFFEAB308), Icons.face_6],
-  };
 
   void _showGreetingInput() {
     final l = AppLocalizations.of(context)!;
@@ -104,39 +90,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       _showGreetingForm = false;
     });
     final l = AppLocalizations.of(context)!;
-    Fluttertoast.showToast(msg: error != null ? l.get(error) : l.get('request_sent'));
-  }
-
-  Future<void> _handleToggleBlock() async {
-    final chatProvider = context.read<ChatProvider>();
-    final isBlocked = chatProvider.isUserBlocked(widget.userId);
-    final l = AppLocalizations.of(context)!;
-
-    setState(() => _isBlocking = true);
-
-    if (isBlocked) {
-      await chatProvider.unblockUser(widget.userId);
-      if (!mounted) return;
-      setState(() => _isBlocking = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l.get('unblock_success')),
-          backgroundColor: AppTheme.successColor,
-        ),
-      );
-    } else {
-      await chatProvider.blockUser(widget.userId);
-      if (!mounted) return;
-      setState(() => _isBlocking = false);
-      // 屏蔽后关闭弹窗，让用户知道可以在屏蔽列表中管理
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l.get('block_success')),
-          backgroundColor: AppTheme.successColor,
-        ),
-      );
-    }
+    Fluttertoast.showToast(msg: error ?? l.get('request_sent'));
   }
 
   void _handleSendMessage() {
@@ -147,6 +101,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
       'friendName': widget.nickname,
       'friendAvatar': widget.avatar,
       'friendUserCode': widget.userCode,
+      'friendIsOfficial': widget.isOfficial,
     });
   }
 
@@ -158,9 +113,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
-    final friendProvider = context.watch<FriendProvider>();
-    final chatProvider = context.watch<ChatProvider>();
-    final isBlocked = chatProvider.isUserBlocked(widget.userId);
+    // 底部弹窗使用 read 而非 watch，避免 InheritedWidget _dependents 断言错误
+    final friendProvider = context.read<FriendProvider>();
 
     return SafeArea(
       child: Padding(
@@ -191,7 +145,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
             const SizedBox(height: 24),
 
             // Avatar
-            _buildAvatar(widget.avatar, widget.nickname, 72),
+            AvatarWidget(avatarPath: widget.avatar, name: widget.nickname, size: 72, isOfficial: widget.isOfficial),
             const SizedBox(height: 16),
 
             // Nickname
@@ -282,24 +236,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
                   ),
                   const SizedBox(width: 10),
 
-                  // Block / Unblock
-                  Expanded(
-                    child: _buildActionButton(
-                      label: isBlocked
-                          ? l.get('unblock_user')
-                          : l.get('block_user'),
-                      icon: isBlocked
-                          ? Icons.visibility_rounded
-                          : Icons.block_rounded,
-                      color: isBlocked
-                          ? AppTheme.successColor
-                          : AppTheme.dangerColor,
-                      isLoading: _isBlocking,
-                      onPressed: _isBlocking ? null : _handleToggleBlock,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-
                   // Report
                   Expanded(
                     child: _buildActionButton(
@@ -372,67 +308,4 @@ class _UserProfilePageState extends State<UserProfilePage> {
     );
   }
 
-  Widget _buildAvatar(String avatarPath, String name, double size) {
-    final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
-    final radius = size * 0.28;
-
-    // System preset avatar
-    if (avatarPath.startsWith('/system/avatars/')) {
-      final style = _sysAvatarMap[avatarPath];
-      if (style != null) {
-        final color = style[0] as Color;
-        final icon = style[1] as IconData;
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(radius),
-          ),
-          child: Center(
-            child: Icon(icon, size: size * 0.55, color: color),
-          ),
-        );
-      }
-    }
-
-    // Network image avatar
-    if (avatarPath.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Image.network(
-          avatarPath,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              _buildLetterAvatar(initial, size, radius),
-        ),
-      );
-    }
-
-    // Default letter placeholder
-    return _buildLetterAvatar(initial, size, radius);
-  }
-
-  Widget _buildLetterAvatar(String initial, double size, double radius) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(radius),
-      ),
-      child: Center(
-        child: Text(
-          initial,
-          style: TextStyle(
-            fontSize: size * 0.39,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.primaryColor,
-          ),
-        ),
-      ),
-    );
-  }
 }

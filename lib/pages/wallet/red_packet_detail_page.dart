@@ -19,10 +19,9 @@ class _RedPacketDetailPageState extends State<RedPacketDetailPage> {
   RedPacketModel? _packet;
   bool _isLoading = true;
 
-  // 微信红包配色
-  static const _rpRed = Color(0xFFE84E35);
-  static const _rpRedDark = Color(0xFFD44430);
-  static const _goldText = Color(0xFFE8C06A);
+  // 微信红包配色（与 open_dialog 统一）
+  static const _rpRed = Color(0xFFD4534B);
+  static const _goldText = Color(0xFFECC88A);
   static const _orangeText = Color(0xFFE8A03A);
 
   @override

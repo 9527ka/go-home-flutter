@@ -17,10 +17,7 @@ import '../pages/profile/language_page.dart';
 import '../pages/profile/edit_profile_page.dart';
 import '../pages/profile/feedback_page.dart';
 import '../pages/profile/account_settings_page.dart';
-import '../pages/chat/chat_page.dart';
-import '../pages/chat/chat_room_detail_page.dart';
 import '../pages/chat/conversation_list_page.dart';
-import '../pages/chat/blocked_users_page.dart';
 import '../pages/chat/private_chat_page.dart';
 import '../pages/friend/friend_list_page.dart';
 import '../pages/friend/friend_request_page.dart';
@@ -53,10 +50,7 @@ class AppRoutes {
   static const String editProfile = '/edit-profile';
   static const String feedback = '/feedback';
   static const String accountSettings = '/account-settings';
-  static const String chatRoom = '/chat';
-  static const String chatRoomDetail = '/chat/detail';
   static const String conversations = '/conversations';
-  static const String blockedUsers = '/blocked-users';
   static const String privateChat = '/private-chat';
 
   // 好友相关路由
@@ -95,10 +89,7 @@ class AppRoutes {
         editProfile: (_) => const EditProfilePage(),
         feedback: (_) => const FeedbackPage(),
         accountSettings: (_) => const AccountSettingsPage(),
-        chatRoom: (_) => const ChatPage(),
-        chatRoomDetail: (_) => const ChatRoomDetailPage(),
         conversations: (_) => const ConversationListPage(),
-        blockedUsers: (_) => const BlockedUsersPage(),
         // 好友
         friendListPage: (_) => const FriendListPage(),
         friendRequests: (_) => const FriendRequestPage(),
@@ -136,6 +127,7 @@ class AppRoutes {
           friendName: args['friendName'] as String,
           friendAvatar: args['friendAvatar'] as String? ?? '',
           friendUserCode: args['friendUserCode'] as String? ?? '',
+          friendIsOfficial: args['friendIsOfficial'] as bool? ?? false,
         ),
       );
     }

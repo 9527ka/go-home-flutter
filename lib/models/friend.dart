@@ -8,6 +8,7 @@ class FriendModel {
   final String userCode;
   final String remark; // 好友备注
   final String createdAt;
+  final int userType; // 0=普通用户 1=官方客服
 
   FriendModel({
     required this.id,
@@ -18,6 +19,7 @@ class FriendModel {
     this.userCode = '',
     this.remark = '',
     this.createdAt = '',
+    this.userType = 0,
   });
 
   factory FriendModel.fromJson(Map<String, dynamic> json) {
@@ -33,8 +35,11 @@ class FriendModel {
       userCode: json['user_code'] ?? user?['user_code'] ?? friend?['user_code'] ?? '',
       remark: json['remark'] ?? '',
       createdAt: json['created_at'] ?? '',
+      userType: json['user_type'] ?? user?['user_type'] ?? friend?['user_type'] ?? 0,
     );
   }
+
+  bool get isOfficialService => userType == 1;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -45,6 +50,7 @@ class FriendModel {
         'user_code': userCode,
         'remark': remark,
         'created_at': createdAt,
+        'user_type': userType,
       };
 
   /// 显示名称：优先备注，其次昵称

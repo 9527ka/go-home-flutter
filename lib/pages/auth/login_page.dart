@@ -178,9 +178,6 @@ class _LoginPageState extends State<LoginPage> {
                           width: 72,
                           height: 72,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)],
-                            ),
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
@@ -190,7 +187,10 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.home_rounded, size: 38, color: Colors.white),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: Image.asset('assets/icon/app_icon.png', width: 72, height: 72),
+                          ),
                         ),
                         const SizedBox(height: 20),
                         Text(
@@ -368,11 +368,37 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 24),
 
-                  // ===== Apple 授权登录（暂时隐藏） =====
-                  // TODO: Apple 审核通过后恢复
-                  // if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
-                  //   ... Apple Sign-In button ...
-                  // ],
+                  // Apple 授权登录
+                  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: _appleSignInLoading
+                          ? const Center(
+                              child: SizedBox(
+                                width: 24, height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2.5),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: _appleSignIn,
+                              icon: const Icon(Icons.apple, size: 22),
+                              label: Text(
+                                l.get('apple_sign_in'),
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   // 一键快速登录
                   SizedBox(
@@ -401,29 +427,6 @@ class _LoginPageState extends State<LoginPage> {
                               elevation: 0,
                             ),
                           ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // 游客浏览
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: () {
-                        // 清除路由栈并跳转首页，避免 iPad 上多实例问题
-                        Navigator.pushNamedAndRemoveUntil(
-                          context,
-                          AppRoutes.home,
-                          (route) => false,
-                        );
-                      },
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: AppTheme.textHint.withOpacity(0.5)),
-                        foregroundColor: AppTheme.textSecondary,
-                      ),
-                      child: Text(l.get('browse_first')),
-                    ),
                   ),
 
                   const SizedBox(height: 40),

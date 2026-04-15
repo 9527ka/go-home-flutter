@@ -54,7 +54,7 @@ class StorageUtil {
 
   static Future<String> getLanguage() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_languageKey) ?? 'en-US';
+    return prefs.getString(_languageKey) ?? 'zh-CN';
   }
 
   // ---- 记住我 ----
@@ -93,37 +93,6 @@ class StorageUtil {
   static Future<bool> getEulaAccepted() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_eulaAcceptedKey) ?? false;
-  }
-
-  // ---- 屏蔽用户列表 ----
-  static const String _blockedUsersKey = 'go_home_blocked_users';
-
-  static Future<void> saveBlockedUsers(List<int> userIds) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      _blockedUsersKey,
-      userIds.map((id) => id.toString()).toList(),
-    );
-  }
-
-  static Future<List<int>> getBlockedUsers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList(_blockedUsersKey) ?? [];
-    return list.map((s) => int.tryParse(s) ?? 0).where((id) => id > 0).toList();
-  }
-
-  static Future<void> addBlockedUser(int userId) async {
-    final list = await getBlockedUsers();
-    if (!list.contains(userId)) {
-      list.add(userId);
-      await saveBlockedUsers(list);
-    }
-  }
-
-  static Future<void> removeBlockedUser(int userId) async {
-    final list = await getBlockedUsers();
-    list.remove(userId);
-    await saveBlockedUsers(list);
   }
 
   // ---- Posts Cache ----

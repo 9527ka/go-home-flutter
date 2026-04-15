@@ -91,7 +91,9 @@ class ChatMessageHandler {
         break;
 
       case 'error':
-        debugPrint('[WS] Server error: ${data['msg']}');
+        debugPrint('[WS] Server error: ${data['msg']} code=${data['error_code']} client_msg_id=${data['client_msg_id']}');
+        // 透传到外部 handler，便于私聊/群聊页面定位到对应乐观消息并标记失败
+        _dispatchToExternalHandlers('error', data);
         break;
 
       // ===== 红包消息 — 公共聊天室当作普通消息处理 =====

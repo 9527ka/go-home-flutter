@@ -36,16 +36,18 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
     super.dispose();
   }
 
+  bool get _isPrivate => widget.targetType == 2;
+
   Future<void> _submit() async {
     final l = AppLocalizations.of(context)!;
     final amount = double.tryParse(_amountController.text.trim()) ?? 0;
-    final count = int.tryParse(_countController.text.trim()) ?? 0;
+    final count = _isPrivate ? 1 : (int.tryParse(_countController.text.trim()) ?? 0);
 
     if (amount <= 0) {
       _showSnack(l.get('please_enter_amount'));
       return;
     }
-    if (count <= 0) {
+    if (!_isPrivate && count <= 0) {
       _showSnack(l.get('please_enter_count'));
       return;
     }
@@ -86,6 +88,7 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -93,12 +96,13 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
           gradient: const LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFE53935), Color(0xFFC62828)],
+            colors: [Color(0xFFD4534B), Color(0xFFBE4740)],
           ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // 标题
             Text(
               l.get('send_red_packet'),
@@ -128,23 +132,24 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
 
             const SizedBox(height: 16),
 
-            // 红包个数
-            TextField(
-              controller: _countController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-              decoration: InputDecoration(
-                filled: false,
-                labelText: l.get('red_packet_count'),
-                labelStyle: TextStyle(color: Colors.white.withOpacity(0.8)),
-                floatingLabelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.3))),
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+            // 红包个数（私聊固定1个，不显示）
+            if (!_isPrivate) ...[
+              TextField(
+                controller: _countController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                decoration: InputDecoration(
+                  filled: false,
+                  labelText: l.get('red_packet_count'),
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.8)),
+                  floatingLabelStyle: TextStyle(color: Colors.white.withOpacity(0.9)),
+                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.3))),
+                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
               ),
-            ),
-
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
 
             // 祝福语
             TextField(
@@ -182,7 +187,7 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
                 onPressed: _isSubmitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFD54F),
-                  foregroundColor: const Color(0xFFC62828),
+                  foregroundColor: const Color(0xFFBE4740),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                 ),
                 child: _isSubmitting
@@ -190,7 +195,8 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
                     : Text(l.get('send'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

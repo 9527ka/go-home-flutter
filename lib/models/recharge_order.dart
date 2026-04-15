@@ -14,6 +14,8 @@ class RechargeOrderModel {
   final String createdAt;
   final String? processedAt;
   final UserModel? user;
+  final int paymentType; // 0=USDT, 1=Apple IAP
+  final String? iapProductId;
 
   RechargeOrderModel({
     required this.id,
@@ -28,6 +30,8 @@ class RechargeOrderModel {
     required this.createdAt,
     this.processedAt,
     this.user,
+    this.paymentType = 0,
+    this.iapProductId,
   });
 
   factory RechargeOrderModel.fromJson(Map<String, dynamic> json) {
@@ -44,10 +48,13 @@ class RechargeOrderModel {
       createdAt: json['created_at'] ?? '',
       processedAt: json['processed_at'],
       user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
+      paymentType: json['payment_type'] ?? 0,
+      iapProductId: json['iap_product_id'],
     );
   }
 
   bool get isPending => status == 0;
   bool get isApproved => status == 1;
   bool get isRejected => status == 2;
+  bool get isIap => paymentType == 1;
 }

@@ -1,5 +1,6 @@
 import 'donation.dart';
 import 'post_boost.dart';
+import 'reward_claim.dart';
 import 'user.dart';
 
 class PostModel {
@@ -10,7 +11,6 @@ class PostModel {
   final String name;
   final int gender;
   final String age;
-  final String species;
   final String appearance;
   final String description;
   final String lostAt;
@@ -37,10 +37,13 @@ class PostModel {
   final String? disclaimer;
   final String? auditRemark;
   final bool isBoosted;
+  final double rewardAmount;
+  final double rewardPaid;
   final bool isLiked;
   final bool isFavorited;
   final List<DonationModel> donations;
   final List<PostBoostModel> boosts;
+  final List<RewardClaimModel> rewardClaims;
 
   PostModel({
     required this.id,
@@ -50,7 +53,6 @@ class PostModel {
     required this.name,
     this.gender = 0,
     this.age = '',
-    this.species = '',
     required this.appearance,
     this.description = '',
     required this.lostAt,
@@ -76,11 +78,14 @@ class PostModel {
     this.user,
     this.disclaimer,
     this.auditRemark,
+    this.rewardAmount = 0.0,
+    this.rewardPaid = 0.0,
     this.isBoosted = false,
     this.isLiked = false,
     this.isFavorited = false,
     this.donations = const [],
     this.boosts = const [],
+    this.rewardClaims = const [],
   });
 
   factory PostModel.fromJson(Map<String, dynamic> json) {
@@ -116,6 +121,15 @@ class PostModel {
       }
     } catch (_) {}
 
+    List<RewardClaimModel> rewardClaimList = [];
+    try {
+      if (json['reward_claims'] != null) {
+        rewardClaimList = (json['reward_claims'] as List)
+            .map((r) => RewardClaimModel.fromJson(r as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (_) {}
+
     return PostModel(
       id: json['id'] ?? 0,
       userId: json['user_id'] ?? 0,
@@ -124,7 +138,6 @@ class PostModel {
       name: json['name'] ?? '',
       gender: json['gender'] ?? 0,
       age: json['age'] ?? '',
-      species: json['species'] ?? '',
       appearance: json['appearance'] ?? '',
       description: json['description'] ?? '',
       lostAt: json['lost_at'] ?? '',
@@ -150,11 +163,14 @@ class PostModel {
       user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
       disclaimer: json['disclaimer'],
       auditRemark: json['audit_remark'],
+      rewardAmount: double.tryParse('${json['reward_amount']}') ?? 0.0,
+      rewardPaid: double.tryParse('${json['reward_paid']}') ?? 0.0,
       isBoosted: json['is_boosted'] == 1 || json['is_boosted'] == true,
       isLiked: json['is_liked'] == true || json['is_liked'] == 1,
       isFavorited: json['is_favorited'] == true || json['is_favorited'] == 1,
       donations: donationList,
       boosts: boostList,
+      rewardClaims: rewardClaimList,
     );
   }
 
@@ -173,7 +189,6 @@ class PostModel {
       name: name,
       gender: gender,
       age: age,
-      species: species,
       appearance: appearance,
       description: description,
       lostAt: lostAt,
@@ -199,11 +214,14 @@ class PostModel {
       user: user,
       disclaimer: disclaimer,
       auditRemark: auditRemark,
+      rewardAmount: rewardAmount,
+      rewardPaid: rewardPaid,
       isBoosted: isBoosted,
       isLiked: isLiked ?? this.isLiked,
       isFavorited: isFavorited ?? this.isFavorited,
       donations: donations,
       boosts: boosts,
+      rewardClaims: rewardClaims,
     );
   }
 
@@ -243,7 +261,6 @@ class PostModel {
     'name': name,
     'gender': gender,
     'age': age,
-    'species': species,
     'appearance': appearance,
     'description': description,
     'lost_at': lostAt,
@@ -270,7 +287,15 @@ class PostModel {
     'disclaimer': disclaimer,
     'audit_remark': auditRemark,
     'is_boosted': isBoosted ? 1 : 0,
+    'reward_amount': rewardAmount,
+    'reward_paid': rewardPaid,
   };
+
+  /// 是否有悬赏
+  bool get hasReward => rewardAmount > 0;
+
+  /// 剩余可发放悬赏
+  double get rewardRemaining => rewardAmount - rewardPaid;
 
   /// 是否可编辑（待审核、被驳回、举报屏蔽）
   bool get canEdit => status == 0 || status == 4 || status == 5;

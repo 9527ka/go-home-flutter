@@ -10,7 +10,6 @@ class PostService {
   Future<Map<String, dynamic>> create({
     required int category,
     required String name,
-    String species = '',
     required String appearance,
     String description = '',
     required String lostAt,
@@ -22,11 +21,11 @@ class PostService {
     double? lostLatitude,
     List<String> images = const [],
     int visibility = 1,
+    double? rewardAmount,
   }) async {
     return await _http.post(ApiConfig.postCreate, data: {
       'category': category,
       'name': name,
-      'species': species,
       'appearance': appearance,
       'description': description,
       'lost_at': lostAt,
@@ -38,6 +37,7 @@ class PostService {
       'lost_latitude': lostLatitude,
       'images': images,
       'visibility': visibility,
+      if (rewardAmount != null && rewardAmount > 0) 'reward_amount': rewardAmount,
     });
   }
 
@@ -100,7 +100,6 @@ class PostService {
   Future<Map<String, dynamic>> update({
     required int id,
     String? name,
-    String? species,
     String? appearance,
     String? description,
     String? lostAt,
@@ -115,7 +114,6 @@ class PostService {
   }) async {
     final data = <String, dynamic>{'id': id};
     if (name != null) data['name'] = name;
-    if (species != null) data['species'] = species;
     if (appearance != null) data['appearance'] = appearance;
     if (description != null) data['description'] = description;
     if (lostAt != null) data['lost_at'] = lostAt;

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/wallet.dart';
 import '../models/wallet_transaction.dart';
-import '../models/recharge_order.dart';
-import '../models/withdrawal_order.dart';
 import '../services/wallet_service.dart';
 
 class WalletProvider extends ChangeNotifier {

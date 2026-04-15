@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../config/theme.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/red_packet_card.dart';
@@ -45,10 +46,81 @@ class BubbleContent extends StatelessWidget {
         return _buildVoiceBubble();
       case ChatMsgType.redPacket:
         return _buildRedPacketBubble();
+      case ChatMsgType.voiceCall:
+        return _buildVoiceCallBubble(context);
+      case ChatMsgType.system:
+        // 系统消息由外层居中渲染，不走气泡布局
+        return const SizedBox.shrink();
       case ChatMsgType.text:
-      default:
         return _buildTextBubble();
     }
+  }
+
+  /// 通话记录气泡：根据 mediaInfo.status 显示不同文案
+  Widget _buildVoiceCallBubble(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final status = msg.callStatus;
+    final duration = msg.callDuration;
+
+    String label;
+    switch (status) {
+      case 'completed':
+        label = l.get('voice_call_completed')
+            .replaceAll('{duration}', _formatDuration(duration));
+        break;
+      case 'declined':
+        label = l.get('voice_call_declined');
+        break;
+      case 'canceled':
+        label = l.get('voice_call_canceled');
+        break;
+      case 'missed':
+        label = l.get('voice_call_missed');
+        break;
+      case 'busy':
+        label = l.get('voice_call_busy');
+        break;
+      default:
+        label = l.get('voice_call');
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isMe ? AppTheme.primaryColor : AppTheme.cardBg,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(isMe ? 14 : 4),
+          topRight: Radius.circular(isMe ? 4 : 14),
+          bottomLeft: const Radius.circular(14),
+          bottomRight: const Radius.circular(14),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.call,
+            size: 18,
+            color: isMe ? Colors.white : AppTheme.primaryColor,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: isMe ? Colors.white : AppTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTextBubble() {
@@ -70,14 +142,42 @@ class BubbleContent extends StatelessWidget {
           ),
         ],
       ),
-      child: Text(
-        msg.content,
-        style: TextStyle(
-          fontSize: 14,
-          color: isMe ? Colors.white : AppTheme.textPrimary,
-        ),
-      ),
+      child: _buildTextWithMentions(),
     );
+  }
+
+  /// 文本内容渲染：高亮 `@<昵称>` 片段
+  Widget _buildTextWithMentions() {
+    final defaultStyle = TextStyle(
+      fontSize: 14,
+      color: isMe ? Colors.white : AppTheme.textPrimary,
+    );
+    final content = msg.content;
+    if (msg.mentions.isEmpty || !content.contains('@')) {
+      return Text(content, style: defaultStyle);
+    }
+
+    // 简单匹配规则：`@` 后跟随非空白字符串（直到空格 / 标点 / 行尾）
+    final regex = RegExp(r'@([^\s@]+)');
+    final spans = <TextSpan>[];
+    int lastIdx = 0;
+    final mentionStyle = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: isMe ? const Color(0xFFFFE082) : AppTheme.primaryColor,
+    );
+    for (final m in regex.allMatches(content)) {
+      if (m.start > lastIdx) {
+        spans.add(TextSpan(text: content.substring(lastIdx, m.start), style: defaultStyle));
+      }
+      spans.add(TextSpan(text: m.group(0), style: mentionStyle));
+      lastIdx = m.end;
+    }
+    if (lastIdx < content.length) {
+      spans.add(TextSpan(text: content.substring(lastIdx), style: defaultStyle));
+    }
+
+    return RichText(text: TextSpan(children: spans));
   }
 
   Widget _buildImageBubble() {

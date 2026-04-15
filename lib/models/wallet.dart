@@ -1,5 +1,3 @@
-import 'user.dart';
-
 /// 爱心中心信息
 class WalletModel {
   final int userId;

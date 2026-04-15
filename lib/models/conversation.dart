@@ -8,6 +8,9 @@ class ConversationModel {
   final String lastMsgType; // text/image/video/voice
   final String lastMsgTime;
   final int unreadCount;
+  final int userType; // 0=普通用户 1=官方客服
+  final List<String> memberAvatars; // 群成员头像（用于九宫格头像）
+  final List<String> memberNames; // 群成员名称（用于字母占位）
 
   ConversationModel({
     required this.targetId,
@@ -18,9 +21,14 @@ class ConversationModel {
     this.lastMsgType = 'text',
     this.lastMsgTime = '',
     this.unreadCount = 0,
+    this.userType = 0,
+    this.memberAvatars = const [],
+    this.memberNames = const [],
   });
 
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
+    final rawAvatars = json['member_avatars'] as List?;
+    final rawNames = json['member_names'] as List?;
     return ConversationModel(
       targetId: json['target_id'] ?? 0,
       targetType: json['target_type'] ?? 'private',
@@ -30,9 +38,13 @@ class ConversationModel {
       lastMsgType: json['last_msg_type'] ?? 'text',
       lastMsgTime: json['last_msg_time'] ?? '',
       unreadCount: json['unread_count'] ?? 0,
+      userType: json['user_type'] ?? 0,
+      memberAvatars: rawAvatars?.map((e) => '$e').toList() ?? const [],
+      memberNames: rawNames?.map((e) => '$e').toList() ?? const [],
     );
   }
 
+  bool get isOfficialService => userType == 1;
   bool get isPrivate => targetType == 'private';
   bool get isGroup => targetType == 'group';
   bool get hasUnread => unreadCount > 0;
@@ -47,7 +59,15 @@ class ConversationModel {
         return tr('media_video');
       case 'voice':
         return tr('media_voice');
+      case 'red_packet':
+        return tr('media_red_packet');
+      case 'voice_call':
+        return tr('media_voice_call');
       default:
+        // 兜底：如果 lastMsgType 未正确上报但 lastMessage 是红包 JSON，也识别为 [红包]
+        if (lastMessage.startsWith('{') && lastMessage.contains('red_packet_id')) {
+          return tr('media_red_packet');
+        }
         return lastMessage;
     }
   }

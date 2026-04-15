@@ -40,7 +40,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<FriendProvider>().loadFriends();
+      context.read<FriendProvider>().loadFriendsIfEmpty();
     });
   }
 

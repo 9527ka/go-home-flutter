@@ -15,6 +15,7 @@ class FriendRequestPage extends StatefulWidget {
 
 class _FriendRequestPageState extends State<FriendRequestPage> {
   bool _initialLoading = true;
+  final Set<int> _processingIds = {}; // 防重复点击
 
   @override
   void initState() {
@@ -30,29 +31,46 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
   }
 
   Future<void> _acceptRequest(FriendRequestModel request) async {
-    final l = AppLocalizations.of(context)!;
-    final error = await context.read<FriendProvider>().acceptRequest(request.id);
-    if (!mounted) return;
+    if (_processingIds.contains(request.id)) return;
+    setState(() => _processingIds.add(request.id));
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(error != null ? l.get(error) : l.get('request_accepted')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    final l = AppLocalizations.of(context)!;
+    try {
+      final error = await context.read<FriendProvider>().acceptRequest(
+            request.id,
+            greetingPreview: l.get('friend_accept_greeting'),
+          );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error != null ? l.get(error) : l.get('request_accepted')),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _processingIds.remove(request.id));
+    }
   }
 
   Future<void> _rejectRequest(FriendRequestModel request) async {
-    final l = AppLocalizations.of(context)!;
-    final error = await context.read<FriendProvider>().rejectRequest(request.id);
-    if (!mounted) return;
+    if (_processingIds.contains(request.id)) return;
+    setState(() => _processingIds.add(request.id));
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(error != null ? l.get(error) : l.get('request_rejected')),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    final l = AppLocalizations.of(context)!;
+    try {
+      final error = await context.read<FriendProvider>().rejectRequest(request.id);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error != null ? l.get(error) : l.get('request_rejected')),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _processingIds.remove(request.id));
+    }
   }
 
   @override
@@ -144,7 +162,9 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
                         child: SizedBox(
                           height: 34,
                           child: ElevatedButton(
-                            onPressed: () => _acceptRequest(request),
+                            onPressed: _processingIds.contains(request.id)
+                                ? null
+                                : () => _acceptRequest(request),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.successColor,
                               foregroundColor: Colors.white,
@@ -155,7 +175,9 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
                               ),
                               textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                             ),
-                            child: Text(l.get('accept')),
+                            child: _processingIds.contains(request.id)
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : Text(l.get('accept')),
                           ),
                         ),
                       ),
@@ -164,7 +186,9 @@ class _FriendRequestPageState extends State<FriendRequestPage> {
                         child: SizedBox(
                           height: 34,
                           child: OutlinedButton(
-                            onPressed: () => _rejectRequest(request),
+                            onPressed: _processingIds.contains(request.id)
+                                ? null
+                                : () => _rejectRequest(request),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppTheme.textSecondary,
                               minimumSize: Size.zero,

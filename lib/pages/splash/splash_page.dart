@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/conversation_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/friend_provider.dart';
 import '../../widgets/privacy_consent_dialog.dart';
@@ -77,6 +78,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       // 绑定 FriendProvider 到 ChatProvider（接收 WebSocket 好友通知）
       final friendProvider = context.read<FriendProvider>();
       friendProvider.bindChatProvider(context.read<ChatProvider>());
+      friendProvider.bindConversationProvider(context.read<ConversationProvider>());
       friendProvider.fetchRequestCount();
     }
 
@@ -146,13 +148,15 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                     width: 110,
                     height: 110,
                     decoration: BoxDecoration(
-                      color: Colors.white,
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10)),
                       ],
                     ),
-                    child: const Icon(Icons.home_rounded, size: 60, color: AppTheme.primaryColor),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: Image.asset('assets/icon/app_icon.png', width: 110, height: 110),
+                    ),
                   ),
                   const SizedBox(height: 28),
                   const Text(

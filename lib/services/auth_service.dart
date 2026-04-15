@@ -76,6 +76,23 @@ class AuthService {
     return res;
   }
 
+  /// 绑定 Apple ID（游客升级）
+  Future<Map<String, dynamic>> bindApple({
+    required String identityToken,
+    required String userIdentifier,
+    String? fullName,
+    String? email,
+  }) async {
+    final data = <String, dynamic>{
+      'identity_token': identityToken,
+      'user_identifier': userIdentifier,
+    };
+    if (fullName != null && fullName.isNotEmpty) data['full_name'] = fullName;
+    if (email != null && email.isNotEmpty) data['email'] = email;
+
+    return await _http.post(ApiConfig.bindApple, data: data);
+  }
+
   /// 修改账号
   Future<Map<String, dynamic>> changeAccount({
     required String account,

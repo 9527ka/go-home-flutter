@@ -21,6 +21,7 @@ class ApiConfig {
   static const String updateProfile = '/api/auth/update';
   static const String quickLogin = '/api/auth/quick-login';
   static const String changeAccount = '/api/auth/change-account';
+  static const String bindApple = '/api/auth/bind-apple';
   static const String changePassword = '/api/auth/change-password';
 
   // App 配置
@@ -54,6 +55,10 @@ class ApiConfig {
   // 账号注销
   static const String deleteAccount = '/api/auth/delete-account';
 
+  // 设备推送令牌
+  static const String deviceRegisterToken = '/api/device/register-token';
+  static const String deviceUnregisterToken = '/api/device/unregister-token';
+
   // 反馈
   static const String feedbackCreate = '/api/feedback/create';
 
@@ -80,12 +85,22 @@ class ApiConfig {
   static const String groupLeave = '/api/group/leave';
   static const String groupKick = '/api/group/kick';
   static const String groupDisband = '/api/group/disband';
+  static const String groupSetRole = '/api/group/set-role';
+  static const String groupSetAlias = '/api/group/set-alias';
+  static const String groupMuteMember = '/api/group/mute-member';
+  static const String groupSetAllMuted = '/api/group/set-all-muted';
+  static const String groupInviteToken = '/api/group/invite-token';
+  static const String groupJoinByToken = '/api/group/join-by-token';
   static const String groupMessages = '/api/group/messages';
 
   // 私聊
   static const String pmHistory = '/api/pm/history';
   static const String pmConversations = '/api/pm/conversations';
   static const String pmRead = '/api/pm/read';
+  static const String pmMute = '/api/pm/mute';
+
+  // 腾讯云 TRTC（私聊语音通话）
+  static const String rtcUserSig = '/api/rtc/user-sig';
 
   // 用户信息
   static const String userInfo = '/api/user/info';
@@ -94,12 +109,14 @@ class ApiConfig {
   static const String walletInfo = '/api/wallet/info';
   static const String walletTransactions = '/api/wallet/transactions';
   static const String walletRecharge = '/api/wallet/recharge';
+  static const String walletIapRecharge = '/api/wallet/iap-recharge';
   static const String walletRechargeList = '/api/wallet/recharge/list';
   static const String walletWithdraw = '/api/wallet/withdraw';
   static const String walletWithdrawList = '/api/wallet/withdraw/list';
   static const String walletDonate = '/api/wallet/donate';
   static const String walletBoost = '/api/wallet/boost';
   static const String walletBoostActive = '/api/wallet/boost/active';
+  static const String walletRewardPay = '/api/wallet/reward/pay';
 
   // 签到
   static const String signStatus = '/api/sign/status';

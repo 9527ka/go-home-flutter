@@ -41,8 +41,8 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
   late AnimationController _rotateController;
 
   // 微信红包红色
-  static const _rpRed = Color(0xFFE84E35);
-  static const _rpRedDark = Color(0xFFD44430);
+  static const _rpRed = Color(0xFFD4534B);
+  static const _rpRedDark = Color(0xFFBE4740);
   static const _goldText = Color(0xFFECC88A);
 
   @override
@@ -161,7 +161,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
               // 红色卡片
               Container(
                 width: screenSize.width * 0.8,
-                height: screenSize.height * 0.7,
+                height: screenSize.height * 0.56,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   gradient: const LinearGradient(

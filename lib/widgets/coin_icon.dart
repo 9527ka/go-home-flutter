@@ -45,9 +45,7 @@ class CoinAmount extends StatelessWidget {
   });
 
   String get _amountText {
-    final num = amount == amount.roundToDouble()
-        ? '${amount.toInt()}'
-        : amount.toStringAsFixed(1);
+    final num = amount.toStringAsFixed(2);
     return prefix != null ? '$prefix$num' : num;
   }
 
@@ -57,8 +55,16 @@ class CoinAmount extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        CoinIcon(size: iconSize),
-        const SizedBox(width: 3),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(iconSize / 2),
+          child: Image.asset(
+            'assets/icon/gold.png',
+            width: iconSize,
+            height: iconSize,
+            errorBuilder: (_, __, ___) => CoinIcon(size: iconSize),
+          ),
+        ),
+        SizedBox(width: iconSize * 0.25),
         Text(_amountText, style: style),
       ],
     );

@@ -28,9 +28,6 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   // ===== 未读消息红点 =====
   bool _hasUnread = false;
 
-  // ===== 屏蔽用户列表 =====
-  final Set<int> _blockedUserIds = {};
-
   // ===== Getters（保持原有公共 API） =====
   List<ChatMessageModel> get messages => _handler.messages;
   bool get isLoading => _isLoading;
@@ -42,7 +39,6 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   int get reconnectAttempts => _ws.reconnectAttempts;
   int get pendingCount => _ws.pendingCount;
   bool get hasUnread => _hasUnread;
-  Set<int> get blockedUserIds => _blockedUserIds;
 
   // ===== 初始化 & 销毁 =====
 
@@ -86,7 +82,6 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
       _hasUnread = false;
       notifyListeners();
     }
-    loadBlockedUsers();
     if (_pageRefCount == 1) {
       debugPrint('[WS] Page entered, connecting...');
       connect();
@@ -201,6 +196,22 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// 切换账号/登出时调用：彻底清空本地 WS 状态、消息缓存和未读标记
+  Future<void> resetSession() async {
+    // 断开 WebSocket 连接（避免新账号还在接收旧连接的消息）
+    try {
+      _ws.disconnect();
+    } catch (_) {}
+    _pageRefCount = 0;
+    _hasUnread = false;
+    _isLoading = false;
+    _onlineCount = 0;
+    _handler.clearMessages();
+    await StorageUtil.clearChatCache();
+    await StorageUtil.saveLastReadChatId(0);
+    notifyListeners();
+  }
+
   /// 加载更早的消息
   Future<void> loadMore() async {
     if (_isLoading || !_handler.hasMore || _handler.messages.isEmpty) return;
@@ -243,30 +254,8 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     _handler.removeHandler(type, handler);
   }
 
-  // ===== 屏蔽用户 =====
-
-  Future<void> loadBlockedUsers() async {
-    final list = await StorageUtil.getBlockedUsers();
-    _blockedUserIds.clear();
-    _blockedUserIds.addAll(list);
-  }
-
-  Future<void> blockUser(int userId) async {
-    _blockedUserIds.add(userId);
-    await StorageUtil.addBlockedUser(userId);
-    try {
-      await _chatService.reportUser(userId, reason: 'blocked_by_user');
-    } catch (_) {}
-    notifyListeners();
-  }
-
-  Future<void> unblockUser(int userId) async {
-    _blockedUserIds.remove(userId);
-    await StorageUtil.removeBlockedUser(userId);
-    notifyListeners();
-  }
-
-  bool isUserBlocked(int userId) => _blockedUserIds.contains(userId);
+  /// 发送任意自定义 WS 指令（如通话信令 call_signal）
+  void sendRaw(Map<String, dynamic> data) => _ws.send(data);
 
   // ===== 发送消息（委托给 ChatMessageSender） =====
 
@@ -287,8 +276,8 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
         mediaInfo: mediaInfo,
       );
 
-  void sendPrivateMessage(int toUserId, String content) =>
-      _sender.sendPrivateMessage(toUserId, content);
+  void sendPrivateMessage(int toUserId, String content, {String? clientMsgId}) =>
+      _sender.sendPrivateMessage(toUserId, content, clientMsgId: clientMsgId);
 
   void sendPrivateMediaMessage({
     required int toUserId,
@@ -297,6 +286,7 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     String thumbUrl = '',
     String content = '',
     Map<String, dynamic>? mediaInfo,
+    String? clientMsgId,
   }) =>
       _sender.sendPrivateMediaMessage(
         toUserId: toUserId,
@@ -305,10 +295,11 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
         thumbUrl: thumbUrl,
         content: content,
         mediaInfo: mediaInfo,
+        clientMsgId: clientMsgId,
       );
 
-  void sendGroupMessage(int groupId, String content) =>
-      _sender.sendGroupMessage(groupId, content);
+  void sendGroupMessage(int groupId, String content, {List<int>? mentions}) =>
+      _sender.sendGroupMessage(groupId, content, mentions: mentions);
 
   void sendGroupMediaMessage({
     required int groupId,
@@ -330,8 +321,8 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
   void sendRedPacketMessage(int redPacketId) =>
       _sender.sendRedPacketMessage(redPacketId);
 
-  void sendPrivateRedPacketMessage(int toUserId, int redPacketId) =>
-      _sender.sendPrivateRedPacketMessage(toUserId, redPacketId);
+  void sendPrivateRedPacketMessage(int toUserId, int redPacketId, {String? clientMsgId}) =>
+      _sender.sendPrivateRedPacketMessage(toUserId, redPacketId, clientMsgId: clientMsgId);
 
   void sendGroupRedPacketMessage(int groupId, int redPacketId) =>
       _sender.sendGroupRedPacketMessage(groupId, redPacketId);

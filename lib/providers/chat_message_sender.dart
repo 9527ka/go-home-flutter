@@ -60,8 +60,9 @@ class ChatMessageSender {
 
   // ===== 私聊消息 =====
 
-  /// 发送私聊文本消息
-  void sendPrivateMessage(int toUserId, String content) {
+  /// 发送私聊文本消息。传入 [clientMsgId] 后服务端会在成功/失败回包中原样带回，
+  /// 便于前端将乐观消息标为 sent/failed。
+  void sendPrivateMessage(int toUserId, String content, {String? clientMsgId}) {
     final text = content.trim();
     if (text.isEmpty) return;
 
@@ -72,11 +73,15 @@ class ChatMessageSender {
       return;
     }
 
-    _ws.send({
+    final data = <String, dynamic>{
       'type': 'private_message',
       'to_id': toUserId,
       'content': filtered,
-    });
+    };
+    if (clientMsgId != null && clientMsgId.isNotEmpty) {
+      data['client_msg_id'] = clientMsgId;
+    }
+    _ws.send(data);
   }
 
   /// 发送私聊多媒体消息
@@ -87,6 +92,7 @@ class ChatMessageSender {
     String thumbUrl = '',
     String content = '',
     Map<String, dynamic>? mediaInfo,
+    String? clientMsgId,
   }) {
     if (!_ws.isAuthenticated) {
       debugPrint('[WS] Not authenticated, cannot send private media');
@@ -104,13 +110,18 @@ class ChatMessageSender {
     if (mediaInfo != null) {
       data['media_info'] = mediaInfo;
     }
+    if (clientMsgId != null && clientMsgId.isNotEmpty) {
+      data['client_msg_id'] = clientMsgId;
+    }
     _ws.send(data);
   }
 
   // ===== 群聊消息 =====
 
   /// 发送群聊文本消息
-  void sendGroupMessage(int groupId, String content) {
+  ///
+  /// [mentions] 被@的用户 ID 列表（可选）
+  void sendGroupMessage(int groupId, String content, {List<int>? mentions}) {
     final text = content.trim();
     if (text.isEmpty) return;
 
@@ -121,11 +132,15 @@ class ChatMessageSender {
       return;
     }
 
-    _ws.send({
+    final data = <String, dynamic>{
       'type': 'group_message',
       'group_id': groupId,
       'content': filtered,
-    });
+    };
+    if (mentions != null && mentions.isNotEmpty) {
+      data['mentions'] = mentions;
+    }
+    _ws.send(data);
   }
 
   /// 发送群聊多媒体消息
@@ -168,13 +183,17 @@ class ChatMessageSender {
   }
 
   /// 发送私聊红包消息
-  void sendPrivateRedPacketMessage(int toUserId, int redPacketId) {
+  void sendPrivateRedPacketMessage(int toUserId, int redPacketId, {String? clientMsgId}) {
     if (!_ws.isAuthenticated) return;
-    _ws.send({
+    final data = <String, dynamic>{
       'type': 'red_packet',
       'red_packet_id': redPacketId,
       'to_id': toUserId,
-    });
+    };
+    if (clientMsgId != null && clientMsgId.isNotEmpty) {
+      data['client_msg_id'] = clientMsgId;
+    }
+    _ws.send(data);
   }
 
   /// 发送群聊红包消息

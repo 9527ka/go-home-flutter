@@ -8,6 +8,8 @@ class GroupMemberModel {
   final int userId;
   final GroupMemberRole role;
   final String joinedAt;
+  final String alias; // 我在本群昵称
+  final String? mutedUntil; // 禁言到期时间（NULL=未禁言）
   // 关联用户信息（后端 detail 接口已扁平化到顶层）
   final String userNickname;
   final String userAvatar;
@@ -19,6 +21,8 @@ class GroupMemberModel {
     required this.userId,
     this.role = GroupMemberRole.member,
     this.joinedAt = '',
+    this.alias = '',
+    this.mutedUntil,
     this.userNickname = '',
     this.userAvatar = '',
     this.userCode = '',
@@ -33,10 +37,22 @@ class GroupMemberModel {
       userId: json['user_id'] ?? user?['id'] ?? 0,
       role: _parseRole(json['role']),
       joinedAt: json['joined_at'] ?? '',
+      alias: json['alias'] ?? '',
+      mutedUntil: json['muted_until'] as String?,
       userNickname: json['nickname'] ?? user?['nickname'] ?? '',
       userAvatar: json['avatar'] ?? user?['avatar'] ?? '',
       userCode: json['user_code'] ?? user?['user_code'] ?? '',
     );
+  }
+
+  /// 是否处于被禁言状态
+  bool get isMuted {
+    if (mutedUntil == null || mutedUntil!.isEmpty) return false;
+    try {
+      return DateTime.parse(mutedUntil!).isAfter(DateTime.now());
+    } catch (_) {
+      return false;
+    }
   }
 
   static GroupMemberRole _parseRole(dynamic value) {

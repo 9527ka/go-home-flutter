@@ -44,4 +44,18 @@ class PmService {
     });
     return res['code'] == 0;
   }
+
+  /// 同步会话免打扰状态到服务端（服务端据此决定是否推送 APNs）
+  Future<bool> setMute({
+    required int targetId,
+    required String targetType,
+    required bool muted,
+  }) async {
+    final res = await _http.post(ApiConfig.pmMute, data: {
+      'target_id': targetId,
+      'target_type': targetType,
+      'muted': muted,
+    });
+    return res['code'] == 0;
+  }
 }

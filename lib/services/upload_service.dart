@@ -112,4 +112,38 @@ class UploadService {
 
     return urls;
   }
+
+  /// 上传视频文件，返回 URL
+  Future<String?> uploadVideo(XFile xFile) async {
+    late final List<int> bytes;
+    try {
+      bytes = await xFile.readAsBytes();
+    } catch (e) {
+      debugPrint('[UploadService] video readAsBytes failed, fallback to File: $e');
+      if (kIsWeb) rethrow;
+      bytes = await File(xFile.path).readAsBytes();
+    }
+
+    final ext = xFile.name.split('.').last.toLowerCase();
+    final contentType = ext == 'mov'
+        ? MediaType('video', 'quicktime')
+        : MediaType('video', 'mp4');
+
+    debugPrint('[UploadService] uploading video: ${xFile.name} (${bytes.length} bytes)');
+
+    final res = await _http.uploadBytes(
+      ApiConfig.uploadVideo,
+      bytes: bytes,
+      fileName: xFile.name,
+      contentType: contentType,
+    );
+
+    debugPrint('[UploadService] video response: $res');
+
+    if (res['code'] == 0 && res['data'] != null) {
+      final url = res['data']['url'] as String?;
+      if (url != null && url.isNotEmpty) return url;
+    }
+    throw Exception(res['msg'] ?? 'Video upload failed (code: ${res['code']})');
+  }
 }

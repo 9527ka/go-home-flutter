@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/routes.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -21,6 +22,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
 import '../../models/group.dart';
+import '../../models/group_member.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/wallet_service.dart';
@@ -36,6 +38,8 @@ import '../../widgets/chat/message_actions.dart';
 import '../friend/user_profile_page.dart';
 import '../wallet/red_packet_send_dialog.dart';
 import '../wallet/red_packet_open_dialog.dart';
+import 'group_message_search_page.dart';
+import 'group_mention_picker.dart';
 
 class GroupChatPage extends StatefulWidget {
   final int groupId;
@@ -44,6 +48,16 @@ class GroupChatPage extends StatefulWidget {
 
   @override
   State<GroupChatPage> createState() => _GroupChatPageState();
+
+  /// 清除指定群的进程内聊天缓存（外部：清空聊天记录时调用）
+  static void invalidateCache(int groupId) {
+    _GroupChatPageState._groupChatCaches.remove(groupId);
+  }
+
+  /// 清除所有群聊缓存（登出 / 切换账号时调用）
+  static void invalidateAllCaches() {
+    _GroupChatPageState._groupChatCaches.clear();
+  }
 }
 
 class _GroupChatPageState extends State<GroupChatPage> {
@@ -56,6 +70,18 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final _audioPlayer = AudioPlayer();
 
   GroupModel? _group;
+  GroupMemberModel? _myMember; // 当前用户在本群的成员信息（用于判定角色 & 禁言）
+  final Map<int, String> _aliasMap = {}; // userId -> 群内昵称（alias）
+  final List<GroupMemberModel> _allMembers = []; // 完整成员列表（用于 @ 选择）
+  // 已 @ 的成员：插入文本时记录，发送时附带 mentions；删除字符时按需清理
+  final Map<int, String> _pendingMentions = {}; // userId -> 显示名（不含 @）
+  String _lastInputText = ''; // 上一次输入文本（用于检测 @ 触发）
+  bool _mentionPickerOpen = false;
+
+  // ===== 进程内消息缓存（页面导航不丢失，进程被杀掉后自动清空） =====
+  // 外部通过 GroupChatPage.invalidateCache / invalidateAllCaches 访问
+  static final Map<int, _GroupChatCache> _groupChatCaches = {};
+
   final List<ChatMessageModel> _messages = [];
   bool _needsAutoScroll = true;
   bool _isLoading = true;
@@ -100,6 +126,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
       if (hasText != _hasInputText) {
         setState(() => _hasInputText = hasText);
       }
+      // 清理已删除的 @mention（用户手动删除 "@xxx " 时，不应再 mention 该人）
+      if (_pendingMentions.isNotEmpty) {
+        final text = _msgCtrl.text;
+        _pendingMentions.removeWhere((_, name) => !text.contains('@$name '));
+      }
+      _maybeTriggerMentionPicker();
     });
 
     _scrollCtrl.addListener(() {
@@ -110,7 +142,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   @override
+  void deactivate() {
+    // 在 deactivate 中清除活跃会话标记，此时 context 仍有效
+    context.read<ConversationProvider>().clearActiveConversation();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    // 先保存消息进程内缓存（下次进入直接复用，无需重拉）
+    _saveChatCache();
     _removeRecordOverlay();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
@@ -119,10 +160,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _unregisterWsHandler();
-    // 清除活跃会话标记
-    try {
-      context.read<ConversationProvider>().clearActiveConversation();
-    } catch (_) {}
     super.dispose();
   }
 
@@ -131,12 +168,14 @@ class _GroupChatPageState extends State<GroupChatPage> {
   void _registerWsHandler() {
     final chatProvider = context.read<ChatProvider>();
     chatProvider.registerHandler('group_message', _onGroupMessage);
+    chatProvider.registerHandler('group_event', _onGroupEvent);
   }
 
   void _unregisterWsHandler() {
     try {
       final chatProvider = context.read<ChatProvider>();
       chatProvider.removeHandler('group_message', _onGroupMessage);
+      chatProvider.removeHandler('group_event', _onGroupEvent);
     } catch (_) {}
   }
 
@@ -156,36 +195,192 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
+  /// 群事件实时推送（如全员禁言开关）
+  void _onGroupEvent(Map<String, dynamic> data) {
+    final groupId = data['group_id'] as int? ?? 0;
+    if (groupId != widget.groupId || !mounted || _group == null) return;
+
+    final event = (data['event'] ?? '') as String;
+    if (event == 'all_muted_changed') {
+      final allMuted = (data['all_muted'] ?? 0) as int;
+      setState(() {
+        _group = _group!.copyWith(allMuted: allMuted);
+      });
+      final l = AppLocalizations.of(context)!;
+      Fluttertoast.showToast(
+        msg: allMuted == 1
+            ? l.get('group_all_mute_on_success')
+            : l.get('group_all_mute_off_success'),
+      );
+    }
+  }
+
   // ===== 数据加载 =====
 
   Future<void> _loadGroupInfo() async {
     try {
       final data = await _groupService.getGroupDetail(widget.groupId);
       if (data != null && mounted) {
+        final memberList = data['members'] as List? ?? [];
+        // 找出当前用户在本群的 member 记录 + 构建 alias 映射 + 完整成员列表
+        final currentUserId = context.read<AuthProvider>().user?.id;
+        GroupMemberModel? myMember;
+        final aliasMap = <int, String>{};
+        final members = <GroupMemberModel>[];
+        for (final raw in memberList) {
+          if (raw is Map<String, dynamic>) {
+            final m = GroupMemberModel.fromJson(raw);
+            members.add(m);
+            if (m.alias.isNotEmpty) aliasMap[m.userId] = m.alias;
+            if (m.userId == currentUserId) myMember = m;
+          }
+        }
+
         setState(() {
           _group = GroupModel.fromJson(data['group'] ?? data);
+          _myMember = myMember;
+          _aliasMap
+            ..clear()
+            ..addAll(aliasMap);
+          _allMembers
+            ..clear()
+            ..addAll(members);
         });
+        // 更新群成员头像到会话缓存
+        if (memberList.isNotEmpty) {
+          final avatars = memberList.map((e) => '${(e as Map)['avatar'] ?? (e['user'] as Map?)?['avatar'] ?? ''}').take(9).toList();
+          final names = memberList.map((e) => '${(e as Map)['nickname'] ?? (e['user'] as Map?)?['nickname'] ?? ''}').take(9).toList();
+          context.read<ConversationProvider>().setGroupMemberAvatars(widget.groupId, avatars, names);
+        }
       }
     } catch (e) {
       debugPrint('[GroupChat] loadGroupInfo error: $e');
     }
   }
 
+  /// 检测是否新输入了 `@` 字符（且光标紧跟其后），自动弹出成员选择
+  void _maybeTriggerMentionPicker() {
+    final text = _msgCtrl.text;
+    final selection = _msgCtrl.selection;
+
+    // 仅当文本"新增"了一个 @ 时触发（避免循环触发）
+    if (text.length == _lastInputText.length + 1 &&
+        selection.isCollapsed &&
+        selection.baseOffset > 0 &&
+        text[selection.baseOffset - 1] == '@' &&
+        !_mentionPickerOpen) {
+      _lastInputText = text;
+      // 异步触发，避免在监听器中直接 showModal
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showMentionPicker(removeAtSign: true));
+      return;
+    }
+    _lastInputText = text;
+  }
+
+  /// 弹出 @ 成员选择器
+  /// [removeAtSign] 为 true 时，从光标前删除一个 `@` 字符（手动按按钮触发不需要）
+  Future<void> _showMentionPicker({bool removeAtSign = false}) async {
+    if (_mentionPickerOpen) return;
+    if (_allMembers.isEmpty) return;
+    final myId = context.read<AuthProvider>().user?.id;
+    _mentionPickerOpen = true;
+    final picked = await showModalBottomSheet<GroupMemberModel>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => GroupMentionPicker(
+        members: _allMembers,
+        excludeUserId: myId,
+      ),
+    );
+    _mentionPickerOpen = false;
+    if (!mounted) return;
+
+    // 不论是否选中，先处理触发字符的 @
+    final selection = _msgCtrl.selection;
+    String text = _msgCtrl.text;
+    int cursor = selection.isValid ? selection.baseOffset : text.length;
+    if (removeAtSign && cursor > 0 && cursor <= text.length && text[cursor - 1] == '@') {
+      text = text.substring(0, cursor - 1) + text.substring(cursor);
+      cursor -= 1;
+    }
+
+    if (picked != null) {
+      final displayName = picked.alias.isNotEmpty ? picked.alias : picked.userNickname;
+      final insert = '@$displayName ';
+      final before = text.substring(0, cursor);
+      final after = text.substring(cursor);
+      text = '$before$insert$after';
+      cursor += insert.length;
+      _pendingMentions[picked.userId] = displayName;
+    }
+
+    _lastInputText = text;
+    _msgCtrl.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: cursor),
+    );
+  }
+
+  /// 当前用户是否被禁止发送消息，返回禁止原因（null 表示允许发送）
+  String? _getSendBlockReason(AppLocalizations l) {
+    final g = _group;
+    if (g == null) return null;
+    if (g.isBanned) return l.get('chat_group_banned');
+    final isAdmin = _myMember?.isAdmin == true;
+    if (g.isAllMuted && !isAdmin) return l.get('chat_group_all_muted');
+    if (_myMember?.isMuted == true) return l.get('chat_member_muted');
+    return null;
+  }
+
+  /// 本地"清空聊天记录"的时间戳（毫秒），早于此时间的消息将被过滤
+  Future<int> _loadClearedAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('group_cleared_at_${widget.groupId}') ?? 0;
+  }
+
+  bool _isAfterCleared(ChatMessageModel msg, int clearedAt) {
+    if (clearedAt == 0) return true;
+    try {
+      return DateTime.parse(msg.createdAt).millisecondsSinceEpoch > clearedAt;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> _loadMessages() async {
+    // 优先使用进程内缓存：页面导航来回不重新请求，仅进程被杀掉或清空聊天记录后才重新加载
+    final cache = _groupChatCaches[widget.groupId];
+    if (cache != null) {
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(cache.messages);
+        _hasMore = cache.hasMore;
+        _isLoading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom(animate: false);
+      });
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
+      final clearedAt = await _loadClearedAt();
       final data = await _groupService.getMessages(
         groupId: widget.groupId,
         limit: 50,
       );
       if (mounted) {
         final list = data['list'] as List? ?? [];
+        final parsed = list
+            .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
+            .where((m) => _isAfterCleared(m, clearedAt))
+            .toList();
         setState(() {
           _messages.clear();
-          _messages.addAll(
-            list.map(
-                (e) => ChatMessageModel.fromJson(e as Map<String, dynamic>)),
-          );
+          _messages.addAll(parsed);
           _hasMore = data['has_more'] == true;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -199,6 +394,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
   }
 
+  /// 保存当前消息到进程内缓存
+  void _saveChatCache() {
+    if (_messages.isNotEmpty) {
+      _groupChatCaches[widget.groupId] = _GroupChatCache(
+        messages: List.of(_messages),
+        hasMore: _hasMore,
+      );
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore || _messages.isEmpty) return;
     _isLoadingMore = true;
@@ -208,6 +413,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
     try {
       final firstMsgId = _messages.first.id;
+      final clearedAt = await _loadClearedAt();
       final data = await _groupService.getMessages(
         groupId: widget.groupId,
         beforeId: firstMsgId,
@@ -217,6 +423,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
         final list = data['list'] as List? ?? [];
         final older = list
             .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
+            .where((m) => _isAfterCleared(m, clearedAt))
             .toList();
         setState(() {
           _messages.insertAll(0, older);
@@ -284,11 +491,23 @@ class _GroupChatPageState extends State<GroupChatPage> {
       return;
     }
 
+    final blockReason = _getSendBlockReason(l);
+    if (blockReason != null) {
+      Fluttertoast.showToast(msg: blockReason);
+      return;
+    }
+
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
 
+    // 仅保留文本中仍存在 "@<name> " 的 mention（防止已删除）
+    final activeMentions = <int>[];
+    _pendingMentions.forEach((uid, name) {
+      if (text.contains('@$name')) activeMentions.add(uid);
+    });
+
     final chatProvider = context.read<ChatProvider>();
-    chatProvider.sendGroupMessage(widget.groupId, text);
+    chatProvider.sendGroupMessage(widget.groupId, text, mentions: activeMentions.isEmpty ? null : activeMentions);
 
     // 更新会话列表
     context.read<ConversationProvider>().onMessageSent(
@@ -307,15 +526,30 @@ class _GroupChatPageState extends State<GroupChatPage> {
       avatar: user.avatar,
       content: text,
       createdAt: DateTime.now().toIso8601String(),
+      mentions: activeMentions,
     );
     setState(() => _messages.add(localMsg));
     _msgCtrl.clear();
+    _pendingMentions.clear();
+    _lastInputText = '';
     _scrollToBottomIfNeeded();
   }
 
   // ===== 多媒体发送 =====
 
+  /// 发送媒体前检查是否被限制，被限制返回 true
+  bool _blockIfRestricted() {
+    final l = AppLocalizations.of(context)!;
+    final reason = _getSendBlockReason(l);
+    if (reason != null) {
+      Fluttertoast.showToast(msg: reason);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _pickAndSendImage() async {
+    if (_blockIfRestricted()) return;
     try {
       final picked = await _imagePicker.pickImage(
         source: ImageSource.gallery,
@@ -331,6 +565,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _takeAndSendPhoto() async {
+    if (_blockIfRestricted()) return;
     try {
       final picked = await _imagePicker.pickImage(
         source: ImageSource.camera,
@@ -346,6 +581,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Future<void> _pickAndSendVideo() async {
+    if (_blockIfRestricted()) return;
     try {
       final picked = await _imagePicker.pickVideo(
         source: ImageSource.gallery,
@@ -444,6 +680,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   Future<void> _onVoiceStart() async {
     if (_isRecording) return;
+    if (_blockIfRestricted()) return;
     if (!await _audioRecorder.hasPermission()) return;
 
     final dir = await getTemporaryDirectory();
@@ -575,6 +812,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // ===== 红包 =====
 
   void _showRedPacketDialog() {
+    if (_blockIfRestricted()) return;
     setState(() => _showMediaPanel = false);
     showDialog(
       context: context,
@@ -778,6 +1016,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.search, size: 22),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GroupMessageSearchPage(
+                    groupId: widget.groupId,
+                    localMessages: List.of(_messages),
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.more_horiz, size: 24),
             onPressed: () {
               Navigator.pushNamed(
@@ -866,6 +1118,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 ),
               ),
 
+            // 受限提示横幅
+            if (_getSendBlockReason(l) != null) _buildRestrictedBanner(l),
+
             // 输入区域
             _buildInputBar(l),
 
@@ -881,7 +1136,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   },
                   config: Config(
                     columns: 8,
-                    emojiSizeMax: 28 *
+                    emojiSizeMax: 22 *
                         (defaultTargetPlatform == TargetPlatform.iOS
                             ? 1.3
                             : 1.0),
@@ -948,6 +1203,27 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
+  Widget _buildRestrictedBanner(AppLocalizations l) {
+    final reason = _getSendBlockReason(l) ?? '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: const Color(0xFFFFF7E0),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 18, color: Color(0xFFB45309)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              reason,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMediaPanel(AppLocalizations l) {
     return MediaPanel(
       onPickImage: _pickAndSendImage,
@@ -956,9 +1232,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
       onSendRedPacket: context.read<AppConfigProvider>().walletEnabled
           ? _showRedPacketDialog
           : null,
-      pickImageLabel: l.get('media_image'),
-      takePhotoLabel: l.get('media_camera'),
-      pickVideoLabel: l.get('media_video'),
+      pickImageLabel: l.get('chat_album'),
+      takePhotoLabel: l.get('take_photo'),
+      pickVideoLabel: l.get('chat_video'),
       redPacketLabel: l.get('red_packet'),
     );
   }
@@ -966,13 +1242,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // ===== 消息气泡 =====
 
   Widget _buildMessageBubble(ChatMessageModel msg, int? currentUserId) {
+    // 系统通知（"XXX 加入了群聊" 等）：居中灰字胶囊，无头像/昵称/时间
+    if (msg.msgType == ChatMsgType.system) {
+      return _buildSystemNotice(msg.content);
+    }
+
     final isMe = currentUserId != null && msg.userId == currentUserId;
+    // 群内昵称（alias）优先于用户原昵称
+    final displayName = _aliasMap[msg.userId] ?? msg.nickname;
 
     return MessageBubble(
-      nickname: msg.nickname,
+      nickname: displayName,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
-      avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36),
+      avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36, isOfficial: msg.isOfficialService),
       onLongPress: () => _showMessageActions(msg, isMe),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
@@ -980,9 +1263,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
         nickname: msg.nickname,
         avatar: msg.avatar,
         userCode: msg.userCode,
+        isOfficial: msg.isOfficialService,
       ),
+      // 长按他人头像 → 直接在输入框插入 @该成员
+      onAvatarLongPress: isMe ? null : () => _mentionUserDirectly(msg.userId, displayName),
       content: _buildBubbleContent(msg, isMe),
     );
+  }
+
+  /// 直接 @ 指定成员（长按头像触发，不走选择器）
+  void _mentionUserDirectly(int userId, String displayName) {
+    if (userId <= 0) return;
+    final insert = '@$displayName ';
+    final text = _msgCtrl.text;
+    final sel = _msgCtrl.selection;
+    final cursor = sel.isValid ? sel.baseOffset : text.length;
+    final before = text.substring(0, cursor);
+    final after = text.substring(cursor);
+    final newText = '$before$insert$after';
+    _pendingMentions[userId] = displayName;
+    _lastInputText = newText;
+    _msgCtrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: cursor + insert.length),
+    );
+    // 自动聚焦输入框方便接着打字
+    FocusScope.of(context).requestFocus(FocusNode());
   }
 
   Widget _buildBubbleContent(ChatMessageModel msg, bool isMe) {
@@ -1017,6 +1323,30 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   Widget _buildUploadingVoiceBubble() {
     return UploadingVoiceBubble(duration: _uploadingVoiceDuration ?? 0);
+  }
+
+  /// 系统通知：居中灰字胶囊（"XXX 加入了群聊" 等）
+  Widget _buildSystemNotice(String content) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            content,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppTheme.textHint,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ===== 辅助方法 =====
@@ -1124,4 +1454,11 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
       ),
     );
   }
+}
+
+/// 群聊进程内消息缓存（仅存活于内存，进程被杀掉后自动清空）
+class _GroupChatCache {
+  final List<ChatMessageModel> messages;
+  final bool hasMore;
+  _GroupChatCache({required this.messages, required this.hasMore});
 }

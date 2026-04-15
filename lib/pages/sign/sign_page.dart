@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/currency.dart';
 import '../../config/theme.dart';
-import '../../models/sign_result.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/task_item.dart';
 import '../../providers/sign_provider.dart';
 import '../../widgets/sign_reward_dialog.dart';
@@ -25,8 +25,10 @@ class _SignPageState extends State<SignPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('签到中心')),
+      appBar: AppBar(title: Text(l.get('sign_center'))),
       body: Consumer<SignProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading && provider.status == null) {
@@ -38,9 +40,9 @@ class _SignPageState extends State<SignPage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildSignCard(context, provider),
+                _buildSignCard(context, provider, l),
                 const SizedBox(height: 16),
-                _buildTaskSection(context, provider),
+                _buildTaskSection(context, provider, l),
               ],
             ),
           );
@@ -50,7 +52,7 @@ class _SignPageState extends State<SignPage> {
   }
 
   /// 签到卡片：7天网格 + 签到按钮
-  Widget _buildSignCard(BuildContext context, SignProvider provider) {
+  Widget _buildSignCard(BuildContext context, SignProvider provider, AppLocalizations l) {
     final status = provider.status;
     final rewards = status?.rewardsConfig ?? [0.1, 0.2, 0.3, 0.5, 0.8, 1, 2];
     final weekStatus = status?.weekStatus ?? List.filled(7, false);
@@ -76,9 +78,9 @@ class _SignPageState extends State<SignPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                '每日签到',
-                style: TextStyle(
+              Text(
+                l.get('daily_sign'),
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -92,10 +94,10 @@ class _SignPageState extends State<SignPage> {
                 ),
                 child: Text(
                   signedToday
-                      ? '已连续签到 $currentStreak 天'
+                      ? l.get('signed_streak').replaceAll('{n}', '$currentStreak')
                       : currentStreak > 0
-                          ? '已连续 $currentStreak 天'
-                          : '开始签到吧',
+                          ? l.get('streak_days').replaceAll('{n}', '$currentStreak')
+                          : l.get('start_signing'),
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                 ),
               ),
@@ -112,6 +114,7 @@ class _SignPageState extends State<SignPage> {
               final reward = index < rewards.length ? rewards[index] : 0.0;
 
               return _buildDayItem(
+                l: l,
                 day: index + 1,
                 reward: reward,
                 isCompleted: isCompleted,
@@ -150,7 +153,7 @@ class _SignPageState extends State<SignPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Text(
-                      signedToday ? '今日已签到' : '立即签到',
+                      signedToday ? l.get('signed_today') : l.get('sign_now'),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -165,6 +168,7 @@ class _SignPageState extends State<SignPage> {
 
   /// 单天奖励项
   Widget _buildDayItem({
+    required AppLocalizations l,
     required int day,
     required double reward,
     required bool isCompleted,
@@ -201,7 +205,7 @@ class _SignPageState extends State<SignPage> {
         ),
         const SizedBox(height: 4),
         Text(
-          '第$day天',
+          l.get('day_n').replaceAll('{n}', '$day'),
           style: TextStyle(
             color: isCompleted ? Colors.white : Colors.white70,
             fontSize: 10,
@@ -212,15 +216,15 @@ class _SignPageState extends State<SignPage> {
   }
 
   /// 任务列表区域
-  Widget _buildTaskSection(BuildContext context, SignProvider provider) {
+  Widget _buildTaskSection(BuildContext context, SignProvider provider, AppLocalizations l) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 12),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
           child: Text(
-            '每日任务',
-            style: TextStyle(
+            l.get('daily_tasks'),
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: AppTheme.textPrimary,
@@ -239,19 +243,19 @@ class _SignPageState extends State<SignPage> {
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Text(
-                '暂无可用任务',
+                l.get('no_tasks'),
                 style: TextStyle(color: AppTheme.textHint),
               ),
             ),
           )
         else
-          ...provider.tasks.map((task) => _buildTaskItem(context, provider, task)),
+          ...provider.tasks.map((task) => _buildTaskItem(context, provider, task, l)),
       ],
     );
   }
 
   /// 单个任务卡片
-  Widget _buildTaskItem(BuildContext context, SignProvider provider, TaskItemModel task) {
+  Widget _buildTaskItem(BuildContext context, SignProvider provider, TaskItemModel task, AppLocalizations l) {
     final isDone = task.isRewarded;
 
     return Container(
@@ -305,7 +309,6 @@ class _SignPageState extends State<SignPage> {
                 ),
                 if (task.targetCount > 1) ...[
                   const SizedBox(height: 6),
-                  // 进度条
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
@@ -353,10 +356,10 @@ class _SignPageState extends State<SignPage> {
                           color: AppTheme.successColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(15),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: Text(
-                            '已完成',
-                            style: TextStyle(
+                            l.get('task_completed'),
+                            style: const TextStyle(
                               color: AppTheme.successColor,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -366,7 +369,7 @@ class _SignPageState extends State<SignPage> {
                       )
                     : task.isCompleted
                         ? ElevatedButton(
-                            onPressed: () => _handleCompleteTask(context, provider, task.taskKey),
+                            onPressed: () => _handleCompleteTask(context, provider, task.taskKey, l),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.accentColor,
                               foregroundColor: Colors.white,
@@ -377,7 +380,7 @@ class _SignPageState extends State<SignPage> {
                               ),
                               elevation: 0,
                             ),
-                            child: const Text('领取', style: TextStyle(fontSize: 12)),
+                            child: Text(l.get('task_claim'), style: const TextStyle(fontSize: 12)),
                           )
                         : Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -385,10 +388,10 @@ class _SignPageState extends State<SignPage> {
                               color: AppTheme.scaffoldBg,
                               borderRadius: BorderRadius.circular(15),
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Text(
-                                '进行中',
-                                style: TextStyle(
+                                l.get('task_in_progress'),
+                                style: const TextStyle(
                                   color: AppTheme.textSecondary,
                                   fontSize: 12,
                                 ),
@@ -419,11 +422,12 @@ class _SignPageState extends State<SignPage> {
     BuildContext context,
     SignProvider provider,
     String taskKey,
+    AppLocalizations l,
   ) async {
     final success = await provider.completeTask(taskKey);
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('任务奖励已发放到待释放爱心值')),
+        SnackBar(content: Text(l.get('task_reward_released'))),
       );
     }
   }

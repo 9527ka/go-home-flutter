@@ -65,6 +65,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // 绑定 FriendProvider，实时接收好友请求通知
     final friendProvider = context.read<FriendProvider>();
     friendProvider.bindChatProvider(chatProvider);
+    friendProvider.bindConversationProvider(conversationProvider);
     friendProvider.fetchRequestCount();
     context.read<NotificationProvider>().fetchUnreadCount();
   }
@@ -99,11 +100,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final auth = context.watch<AuthProvider>();
     final chatProvider = context.watch<ChatProvider>();
     final conversationProvider = context.watch<ConversationProvider>();
+    final friendProvider = context.watch<FriendProvider>();
     final notificationProvider = context.watch<NotificationProvider>();
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      appBar: _buildAppBar(auth, chatProvider, conversationProvider, notificationProvider),
+      appBar: _buildAppBar(auth, chatProvider, conversationProvider, friendProvider, notificationProvider),
       body: Column(
         children: [
           // 免责声明
@@ -163,7 +165,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   PreferredSizeWidget _buildAppBar(AuthProvider auth, ChatProvider chatProvider,
-      ConversationProvider conversationProvider, NotificationProvider notificationProvider) {
+      ConversationProvider conversationProvider, FriendProvider friendProvider,
+      NotificationProvider notificationProvider) {
     final l = AppLocalizations.of(context)!;
     return AppBar(
       leading: Center(
@@ -224,16 +227,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  colors: [Color(0xFF5BA0E8), Color(0xFF4A90D9)]),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child:
-                const Icon(Icons.home_rounded, size: 16, color: Colors.white),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset('assets/icon/app_icon.png', width: 28, height: 28),
           ),
           const SizedBox(width: 8),
           Text(l.get('app_name')),
@@ -264,8 +260,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 }
               },
             ),
-            // 未读红点（公共聊天室 + 私聊/群聊）
-            if (chatProvider.hasUnread || conversationProvider.hasUnread)
+            // 未读红点（公共聊天室 + 私聊/群聊 + 好友申请）
+            if (chatProvider.hasUnread ||
+                conversationProvider.hasUnread ||
+                friendProvider.hasNewRequests)
               Positioned(
                 right: 8,
                 top: 8,

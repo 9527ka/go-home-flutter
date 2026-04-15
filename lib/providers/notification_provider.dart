@@ -36,4 +36,10 @@ class NotificationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// 清空所有本地状态（切换账号/登出时调用）
+  void resetSession() {
+    _unreadCount = 0;
+    notifyListeners();
+  }
 }

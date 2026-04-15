@@ -8,13 +8,12 @@ import 'http_client.dart';
 class FriendService {
   final _http = HttpClient();
 
-  /// 发送好友请求
-  Future<bool> sendRequest({required int toId, String message = ''}) async {
-    final res = await _http.post(ApiConfig.friendRequest, data: {
+  /// 发送好友请求，返回完整响应以便上层区分具体错误
+  Future<Map<String, dynamic>> sendRequest({required int toId, String message = ''}) async {
+    return await _http.post(ApiConfig.friendRequest, data: {
       'to_id': toId,
       'message': message,
     });
-    return res['code'] == 0;
   }
 
   /// 获取收到的待处理好友请求

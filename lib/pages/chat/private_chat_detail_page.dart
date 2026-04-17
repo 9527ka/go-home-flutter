@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
+import '../../providers/friend_provider.dart';
 import '../../services/chat_service.dart';
 import '../../services/friend_service.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/chat/chat_picker_page.dart';
 
 /// 私聊聊天详情页
 class PrivateChatDetailPage extends StatefulWidget {
@@ -291,6 +295,16 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
+          // 推荐给朋友
+          _buildActionButton(
+            icon: Icons.share_outlined,
+            label: l.get('recommend_to_friend'),
+            color: AppTheme.primaryColor,
+            onTap: () => _handleRecommend(l),
+          ),
+
+          const SizedBox(height: 12),
+
           // 清空聊天记录
           _buildActionButton(
             icon: Icons.delete_outline,
@@ -400,6 +414,69 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
         ],
       ),
     );
+  }
+
+  /// 推荐好友给其他聊天
+  Future<void> _handleRecommend(AppLocalizations l) async {
+    final chatProvider = context.read<ChatProvider>();
+
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => ChatPickerPage(title: l.get('recommend_to_friend'))),
+    );
+    if (result == null || !mounted) return;
+
+    final targetType = result['targetType'] as String;
+    final targetId = result['targetId'] as int;
+    final targetName = result['name'] as String;
+
+    // 确认发送
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.get('send_to')),
+        content: Text('${widget.friendName} → $targetName?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.get('cancel'))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryColor, foregroundColor: Colors.white),
+            child: Text(l.get('confirm')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // 名片数据放 mediaInfo，content 用可读文本兜底
+    final cardInfo = {
+      'card_type': 'contact',
+      'nickname': widget.friendName,
+      'user_code': widget.friendUserCode,
+      'avatar': widget.friendAvatar,
+    };
+    final readableContent = '[${l.get('contact_card_label')}] ${widget.friendName}';
+
+    if (targetType == 'private') {
+      chatProvider.sendPrivateMediaMessage(
+        toUserId: targetId, msgType: 'contact_card', mediaUrl: '', content: readableContent, mediaInfo: cardInfo,
+      );
+    } else {
+      chatProvider.sendGroupMediaMessage(
+        groupId: targetId, msgType: 'contact_card', mediaUrl: '', content: readableContent, mediaInfo: cardInfo,
+      );
+    }
+
+    // 更新会话列表预览
+    context.read<ConversationProvider>().onMessageSent(
+      targetId: targetId,
+      targetType: targetType,
+      content: readableContent,
+      msgType: 'contact_card',
+      name: targetName,
+    );
+
+    Fluttertoast.showToast(msg: l.get('recommend_card_sent'));
   }
 
   /// 清空聊天记录
@@ -516,27 +593,30 @@ class _PrivateChatDetailPageState extends State<PrivateChatDetailPage> {
     );
 
     if (confirmed == true && mounted) {
-      final success = await _friendService.removeFriend(widget.friendId);
-      if (mounted) {
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l.get('friend_removed')),
-              backgroundColor: AppTheme.successColor,
-            ),
-          );
-          // 删除好友后同时删除会话，返回会话列表
-          context.read<ConversationProvider>().removeConversation(widget.friendId, 'private');
-          Navigator.pop(context); // 关闭详情页
-          Navigator.pop(context); // 关闭聊天页
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l.get('error_occurred')),
-              backgroundColor: AppTheme.dangerColor,
-            ),
-          );
-        }
+      // pop 后 context 失效，提前捕获
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      final convProvider = context.read<ConversationProvider>();
+      final friendProvider = context.read<FriendProvider>();
+
+      final err = await friendProvider.removeFriend(widget.friendId);
+      if (err == null) {
+        convProvider.removeConversation(widget.friendId, 'private');
+        navigator.pop(); // 关闭详情页
+        navigator.pop(); // 关闭聊天页
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l.get('friend_removed')),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      } else if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l.get('error_occurred')),
+            backgroundColor: AppTheme.dangerColor,
+          ),
+        );
       }
     }
   }

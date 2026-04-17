@@ -1,17 +1,20 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import '../config/iap_products.dart';
 import 'wallet_service.dart';
 
-/// Apple In-App Purchase 服务（单例）
+/// Apple In-App Purchase 服务（单例，懒加载）
 ///
 /// 管理完整购买生命周期：初始化 → 加载产品 → 购买 → 收据验证 → 完成交易
+/// StoreKit 初始化延迟到首次调用 initialize() 时，避免拖慢 App 启动。
 class IapService {
   IapService._();
   static final IapService instance = IapService._();
 
-  final InAppPurchase _iap = InAppPurchase.instance;
+  InAppPurchase? _iap;
   final WalletService _walletService = WalletService();
 
   StreamSubscription<List<PurchaseDetails>>? _subscription;
@@ -20,6 +23,7 @@ class IapService {
   bool _isPurchasing = false;
   bool _initialized = false;
   Completer<void>? _initCompleter;
+  static bool _storeKit1Configured = false;
 
   /// 购买结果回调
   VoidCallback? onPurchaseSuccess;
@@ -29,28 +33,46 @@ class IapService {
   bool get isAvailable => _isAvailable;
   bool get isPurchasing => _isPurchasing;
 
-  /// 初始化 IAP，监听购买流
-  /// 应在用户登录成功后调用，以确保有 token 用于收据验证
-  Future<void> initialize() async {
-    if (_initialized) {
-      debugPrint('[IapService] Already initialized, skipping');
-      return;
+  /// 配置 StoreKit1（仅执行一次，必须在访问 InAppPurchase.instance 之前）
+  static void _ensureStoreKit1() {
+    if (_storeKit1Configured) return;
+    _storeKit1Configured = true;
+    if (Platform.isIOS) {
+      // ignore: deprecated_member_use
+      InAppPurchaseStoreKitPlatform.enableStoreKit1();
     }
+  }
 
-    // 防止并发初始化：后续调用等待首次完成
+  /// 懒加载 InAppPurchase 实例
+  InAppPurchase get _purchase {
+    _ensureStoreKit1();
+    return _iap ??= InAppPurchase.instance;
+  }
+
+  /// 初始化 IAP，监听购买流（懒加载，仅在需要时调用）
+  Future<void> initialize() async {
+    if (_initialized) return;
+
+    // 防止并发初始化
     if (_initCompleter != null) {
       return _initCompleter!.future;
     }
     _initCompleter = Completer<void>();
 
     try {
-      _isAvailable = await _iap.isAvailable();
+      _isAvailable = await _purchase.isAvailable().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          debugPrint('[IapService] isAvailable() timeout');
+          return false;
+        },
+      );
       if (!_isAvailable) {
         debugPrint('[IapService] Store not available');
         return;
       }
 
-      _subscription = _iap.purchaseStream.listen(
+      _subscription = _purchase.purchaseStream.listen(
         _handlePurchaseUpdates,
         onDone: () => _subscription?.cancel(),
         onError: (error) => debugPrint('[IapService] Stream error: $error'),
@@ -77,7 +99,7 @@ class IapService {
   Future<void> loadProducts() async {
     if (!_isAvailable) return;
 
-    final response = await _iap.queryProductDetails(IapProducts.productIds);
+    final response = await _purchase.queryProductDetails(IapProducts.productIds);
     if (response.error != null) {
       debugPrint('[IapService] Query products error: ${response.error}');
       return;
@@ -102,7 +124,7 @@ class IapService {
     _isPurchasing = true;
 
     final purchaseParam = PurchaseParam(productDetails: product);
-    await _iap.buyConsumable(purchaseParam: purchaseParam);
+    await _purchase.buyConsumable(purchaseParam: purchaseParam);
   }
 
   /// 处理购买状态更新
@@ -120,13 +142,13 @@ class IapService {
           onPurchaseError?.call(errorMsg);
           // 错误时完成交易，避免 StoreKit 反复弹出
           if (purchase.pendingCompletePurchase) {
-            await _iap.completePurchase(purchase);
+            await _purchase.completePurchase(purchase);
           }
           break;
         case PurchaseStatus.canceled:
           _isPurchasing = false;
           if (purchase.pendingCompletePurchase) {
-            await _iap.completePurchase(purchase);
+            await _purchase.completePurchase(purchase);
           }
           break;
         case PurchaseStatus.pending:
@@ -167,7 +189,7 @@ class IapService {
     // 关键：仅在后端确认到账后才调用 completePurchase
     // 失败时不 complete，StoreKit 下次启动会自动重放该交易
     if (verified && purchase.pendingCompletePurchase) {
-      await _iap.completePurchase(purchase);
+      await _purchase.completePurchase(purchase);
     }
   }
 

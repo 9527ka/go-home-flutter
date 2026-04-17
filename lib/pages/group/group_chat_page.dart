@@ -23,6 +23,7 @@ import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
 import '../../models/group.dart';
 import '../../models/group_member.dart';
+import '../../services/chat_database.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/wallet_service.dart';
@@ -35,6 +36,7 @@ import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/message_bubble.dart';
 import '../../widgets/chat/bubble_content.dart';
 import '../../widgets/chat/message_actions.dart';
+import '../../widgets/chat/forward_helper.dart';
 import '../friend/user_profile_page.dart';
 import '../wallet/red_packet_send_dialog.dart';
 import '../wallet/red_packet_open_dialog.dart';
@@ -110,6 +112,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // 语音播放
   int? _playingMsgId;
 
+  // 多选模式
+  bool _isMultiSelectMode = false;
+  final Set<int> _selectedMsgIds = {};
+
+  // 引用回复
+  ChatMessageModel? _quotedMsg;
+
   @override
   void initState() {
     super.initState();
@@ -169,6 +178,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final chatProvider = context.read<ChatProvider>();
     chatProvider.registerHandler('group_message', _onGroupMessage);
     chatProvider.registerHandler('group_event', _onGroupEvent);
+    chatProvider.registerHandler('group_recall', _onRecallMessage);
   }
 
   void _unregisterWsHandler() {
@@ -176,22 +186,65 @@ class _GroupChatPageState extends State<GroupChatPage> {
       final chatProvider = context.read<ChatProvider>();
       chatProvider.removeHandler('group_message', _onGroupMessage);
       chatProvider.removeHandler('group_event', _onGroupEvent);
+      chatProvider.removeHandler('group_recall', _onRecallMessage);
     } catch (_) {}
+  }
+
+  /// 收到撤回消息推送
+  void _onRecallMessage(Map<String, dynamic> data) {
+    final groupId = data['group_id'] as int? ?? 0;
+    final messageId = data['message_id'] as int? ?? 0;
+    if (groupId != widget.groupId || messageId <= 0 || !mounted) return;
+    final operatorName = (data['operator_name'] ?? '') as String;
+    final l = AppLocalizations.of(context)!;
+    setState(() {
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        final recalledMsg = _messages[idx];
+        final currentUserId = context.read<AuthProvider>().user?.id;
+        String notice;
+        if (recalledMsg.userId == currentUserId) {
+          notice = l.get('msg_recalled_by_me');
+        } else if (operatorName.isNotEmpty) {
+          notice = '$operatorName ${l.get('msg_recall')}了一条消息';
+        } else {
+          notice = l.get('msg_recalled_by_other');
+        }
+        _messages[idx] = ChatMessageModel(
+          id: messageId,
+          userId: recalledMsg.userId,
+          nickname: recalledMsg.nickname,
+          content: notice,
+          msgType: ChatMsgType.system,
+          createdAt: recalledMsg.createdAt,
+        );
+      }
+    });
   }
 
   void _onGroupMessage(Map<String, dynamic> data) {
     final groupId = data['group_id'] as int? ?? 0;
     if (groupId != widget.groupId) return;
 
-    // 跳过自己发的乐观消息（通过 WebSocket 回传的）
     final fromId = data['user_id'] ?? data['from_id'] ?? 0;
     final currentUserId = context.read<AuthProvider>().user?.id;
-    if (fromId == currentUserId) return;
 
     final msg = ChatMessageModel.fromJson(data);
+
+    // 自己发的消息：如果已有本地乐观消息则跳过（避免重复），否则显示
+    if (fromId == currentUserId) {
+      if (msg.id != null && _messages.any((m) => m.id == msg.id)) return;
+      // 按 content 匹配已有乐观消息
+      final hasLocal = _messages.any((m) => m.id == null && m.userId == currentUserId && m.content == msg.content);
+      if (hasLocal) return;
+    }
+
     if (mounted) {
       setState(() => _messages.add(msg));
       _scrollToBottomIfNeeded();
+      // 持久化到 SQLite
+      final db = ChatDatabase.instance;
+      if (db.isOpen) db.upsertMessage('group', widget.groupId, msg);
     }
   }
 
@@ -203,15 +256,30 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final event = (data['event'] ?? '') as String;
     if (event == 'all_muted_changed') {
       final allMuted = (data['all_muted'] ?? 0) as int;
+      final operatorName = (data['operator_name'] ?? '') as String;
+      final l = AppLocalizations.of(context)!;
+
+      // 构造系统通知消息插入聊天列表
+      final notice = allMuted == 1
+          ? (operatorName.isNotEmpty
+              ? '$operatorName ${l.get('group_all_mute_on_notice')}'
+              : l.get('group_all_mute_on_success'))
+          : (operatorName.isNotEmpty
+              ? '$operatorName ${l.get('group_all_mute_off_notice')}'
+              : l.get('group_all_mute_off_success'));
+      final sysMsg = ChatMessageModel(
+        userId: 0,
+        nickname: '',
+        content: notice,
+        msgType: ChatMsgType.system,
+        createdAt: DateTime.now().toIso8601String(),
+      );
+
       setState(() {
         _group = _group!.copyWith(allMuted: allMuted);
+        _messages.add(sysMsg);
       });
-      final l = AppLocalizations.of(context)!;
-      Fluttertoast.showToast(
-        msg: allMuted == 1
-            ? l.get('group_all_mute_on_success')
-            : l.get('group_all_mute_off_success'),
-      );
+      _scrollToBottomIfNeeded();
     }
   }
 
@@ -366,12 +434,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
     }
 
     setState(() => _isLoading = true);
-    try {
-      final clearedAt = await _loadClearedAt();
-      final data = await _groupService.getMessages(
-        groupId: widget.groupId,
-        limit: 50,
+    final clearedAt = await _loadClearedAt();
+    final clearedDateTime = clearedAt > 0 ? DateTime.fromMillisecondsSinceEpoch(clearedAt) : null;
+
+    // L2: SQLite
+    final db = ChatDatabase.instance;
+    if (db.isOpen) {
+      final dbMsgs = await db.getMessages(
+        chatType: 'group', chatId: widget.groupId, limit: 50, afterTime: clearedDateTime,
       );
+      if (dbMsgs.isNotEmpty && mounted) {
+        setState(() {
+          _messages.clear();
+          _messages.addAll(dbMsgs);
+          _hasMore = dbMsgs.length >= 50;
+          _isLoading = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animate: false));
+        // 后台同步
+        _bgSyncGroupMessages(clearedAt, clearedDateTime);
+        return;
+      }
+    }
+
+    // L3: API
+    try {
+      final data = await _groupService.getMessages(groupId: widget.groupId, limit: 50);
       if (mounted) {
         final list = data['list'] as List? ?? [];
         final parsed = list
@@ -383,15 +471,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
           _messages.addAll(parsed);
           _hasMore = data['has_more'] == true;
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToBottom(animate: false);
-        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animate: false));
+        if (db.isOpen) db.batchUpsert('group', widget.groupId, parsed);
       }
     } catch (e) {
       debugPrint('[GroupChat] loadMessages error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _bgSyncGroupMessages(int clearedAt, DateTime? clearedDateTime) async {
+    try {
+      final data = await _groupService.getMessages(groupId: widget.groupId, limit: 50);
+      final list = data['list'] as List? ?? [];
+      final parsed = list
+          .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
+          .where((m) => _isAfterCleared(m, clearedAt))
+          .toList();
+      final db = ChatDatabase.instance;
+      if (db.isOpen) await db.batchUpsert('group', widget.groupId, parsed);
+      if (mounted && parsed.isNotEmpty) {
+        final existIds = _messages.where((m) => m.id != null).map((m) => m.id!).toSet();
+        final newMsgs = parsed.where((m) => m.id != null && !existIds.contains(m.id)).toList();
+        if (newMsgs.isNotEmpty) setState(() => _messages.addAll(newMsgs));
+      }
+    } catch (_) {}
   }
 
   /// 保存当前消息到进程内缓存
@@ -414,20 +519,36 @@ class _GroupChatPageState extends State<GroupChatPage> {
     try {
       final firstMsgId = _messages.first.id;
       final clearedAt = await _loadClearedAt();
-      final data = await _groupService.getMessages(
-        groupId: widget.groupId,
-        beforeId: firstMsgId,
-        limit: 50,
-      );
-      if (mounted) {
+      final clearedDateTime = clearedAt > 0 ? DateTime.fromMillisecondsSinceEpoch(clearedAt) : null;
+
+      final db = ChatDatabase.instance;
+      List<ChatMessageModel> older = [];
+      if (db.isOpen && firstMsgId != null) {
+        older = await db.getMessages(
+          chatType: 'group', chatId: widget.groupId, beforeId: firstMsgId, limit: 50, afterTime: clearedDateTime,
+        );
+      }
+
+      bool hasMoreFromSource;
+      if (older.isEmpty) {
+        final data = await _groupService.getMessages(
+          groupId: widget.groupId, beforeId: firstMsgId, limit: 50,
+        );
         final list = data['list'] as List? ?? [];
-        final older = list
+        older = list
             .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
             .where((m) => _isAfterCleared(m, clearedAt))
             .toList();
+        hasMoreFromSource = data['has_more'] == true;
+        if (db.isOpen && older.isNotEmpty) db.batchUpsert('group', widget.groupId, older);
+      } else {
+        hasMoreFromSource = older.length >= 50;
+      }
+
+      if (mounted) {
         setState(() {
           _messages.insertAll(0, older);
-          _hasMore = data['has_more'] == true;
+          _hasMore = hasMoreFromSource;
         });
 
         if (_scrollCtrl.hasClients) {
@@ -500,6 +621,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
 
+    // 引用时在消息前加引用前缀
+    String sendContent = text;
+    if (_quotedMsg != null) {
+      final quoteName = _quotedMsg!.nickname;
+      final quoteText = _quotedMsg!.msgType == ChatMsgType.text
+          ? _quotedMsg!.content
+          : '[${_quotedMsg!.msgTypeStr}]';
+      sendContent = '「$quoteName: $quoteText」\n- - - - - -\n$text';
+    }
+
     // 仅保留文本中仍存在 "@<name> " 的 mention（防止已删除）
     final activeMentions = <int>[];
     _pendingMentions.forEach((uid, name) {
@@ -507,7 +638,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     });
 
     final chatProvider = context.read<ChatProvider>();
-    chatProvider.sendGroupMessage(widget.groupId, text, mentions: activeMentions.isEmpty ? null : activeMentions);
+    chatProvider.sendGroupMessage(widget.groupId, sendContent, mentions: activeMentions.isEmpty ? null : activeMentions);
 
     // 更新会话列表
     context.read<ConversationProvider>().onMessageSent(
@@ -524,7 +655,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
       userId: user.id,
       nickname: user.nickname,
       avatar: user.avatar,
-      content: text,
+      content: sendContent,
       createdAt: DateTime.now().toIso8601String(),
       mentions: activeMentions,
     );
@@ -532,6 +663,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     _msgCtrl.clear();
     _pendingMentions.clear();
     _lastInputText = '';
+    if (_quotedMsg != null) setState(() => _quotedMsg = null);
     _scrollToBottomIfNeeded();
   }
 
@@ -669,6 +801,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
       ),
       mediaUrl: result['url'] ?? '',
       thumbUrl: result['thumb_url'] ?? '',
+      mediaInfo: result['media_info'] is Map<String, dynamic>
+          ? result['media_info'] as Map<String, dynamic>
+          : null,
       content: '',
       createdAt: DateTime.now().toIso8601String(),
     );
@@ -951,13 +1086,197 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   // ===== 长按消息菜单 =====
 
-  void _showMessageActions(ChatMessageModel msg, bool isMe) {
+  void _showMessageActions(ChatMessageModel msg, bool isMe, Rect bubbleRect) {
+    final isAdmin = _myMember?.isAdmin == true;
+    final canRecall = isAdmin || isMe;
+
     showMessageActions(
       context: context,
       msg: msg,
       isMe: isMe,
+      bubbleRect: bubbleRect,
+      isAdmin: isAdmin,
+      canRecall: canRecall,
       onReport: () => _reportMessage(msg),
+      onRecall: () => _recallMessage(msg),
+      onDelete: () => _deleteMessageLocally(msg),
+      onForward: () => forwardMessages(context, [msg]),
+      onMultiSelect: () => _enterMultiSelectMode(msg),
+      onQuote: () => _quoteMessage(msg),
     );
+  }
+
+  // ===== 多选模式 =====
+
+  void _enterMultiSelectMode(ChatMessageModel msg) {
+    setState(() {
+      _isMultiSelectMode = true;
+      _selectedMsgIds.clear();
+      if (msg.id != null) _selectedMsgIds.add(msg.id!);
+      _showEmojiPicker = false;
+      _showMediaPanel = false;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  void _exitMultiSelectMode() {
+    setState(() {
+      _isMultiSelectMode = false;
+      _selectedMsgIds.clear();
+    });
+  }
+
+  void _toggleMsgSelection(ChatMessageModel msg) {
+    if (msg.id == null) return;
+    setState(() {
+      if (!_selectedMsgIds.add(msg.id!)) _selectedMsgIds.remove(msg.id!);
+    });
+  }
+
+  Future<void> _forwardSelectedMessages() async {
+    final msgs = _messages.where((m) => _selectedMsgIds.contains(m.id)).toList();
+    final ok = await forwardMessages(context, msgs);
+    if (ok && mounted) _exitMultiSelectMode();
+  }
+
+  void _deleteSelectedMessages() {
+    final l = AppLocalizations.of(context)!;
+    final count = _selectedMsgIds.length;
+    if (count == 0) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text('${l.get("batch_delete_confirm")} ($count)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.get('cancel'))),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              for (final id in _selectedMsgIds) {
+                ChatDatabase.instance.deleteMessage('group', widget.groupId, id);
+              }
+              setState(() {
+                _messages.removeWhere((m) => _selectedMsgIds.contains(m.id));
+                _selectedMsgIds.clear();
+                _isMultiSelectMode = false;
+              });
+              Fluttertoast.showToast(msg: l.get('msg_deleted'));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerColor, foregroundColor: Colors.white),
+            child: Text(l.get('confirm')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMultiSelectToolbar(AppLocalizations l) {
+    final count = _selectedMsgIds.length;
+    return Container(
+      padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: MediaQuery.of(context).padding.bottom + 8),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextButton.icon(
+              onPressed: count > 0 ? _forwardSelectedMessages : null,
+              icon: const Icon(Icons.shortcut_rounded, size: 20),
+              label: Text(l.get('msg_forward')),
+            ),
+          ),
+          Text('$count ${l.get("multi_select_count")}', style: const TextStyle(fontSize: 13, color: AppTheme.textHint)),
+          Expanded(
+            child: TextButton.icon(
+              onPressed: count > 0 ? _deleteSelectedMessages : null,
+              icon: Icon(Icons.delete_outline, size: 20, color: count > 0 ? AppTheme.dangerColor : null),
+              label: Text(l.get('msg_delete'), style: TextStyle(color: count > 0 ? AppTheme.dangerColor : null)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== 引用回复 =====
+
+  void _quoteMessage(ChatMessageModel msg) {
+    setState(() => _quotedMsg = msg);
+    FocusScope.of(context).requestFocus();
+  }
+
+  void _clearQuote() {
+    setState(() => _quotedMsg = null);
+  }
+
+  Widget _buildQuoteBar() {
+    final q = _quotedMsg!;
+    final preview = q.msgType == ChatMsgType.text
+        ? (q.content.length > 40 ? '${q.content.substring(0, 40)}...' : q.content)
+        : '[${q.msgTypeStr}]';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.scaffoldBg,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 3, height: 28, decoration: BoxDecoration(color: AppTheme.primaryColor, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(q.nickname, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
+                Text(preview, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          GestureDetector(onTap: _clearQuote, child: const Icon(Icons.close, size: 16, color: AppTheme.textHint)),
+        ],
+      ),
+    );
+  }
+
+  /// 撤回消息（管理员不限时间，普通成员2分钟内）
+  Future<void> _recallMessage(ChatMessageModel msg) async {
+    if (msg.id == null) return;
+    final l = AppLocalizations.of(context)!;
+    final success = await _chatService.recallGroupMessage(msg.id!, widget.groupId);
+    if (!mounted) return;
+    if (success) {
+      setState(() {
+        final idx = _messages.indexWhere((m) => m.id == msg.id);
+        if (idx >= 0) {
+          _messages[idx] = ChatMessageModel(
+            id: msg.id,
+            userId: msg.userId,
+            nickname: msg.nickname,
+            content: l.get('msg_recalled_by_me'),
+            msgType: ChatMsgType.system,
+            createdAt: msg.createdAt,
+          );
+        }
+      });
+    } else {
+      Fluttertoast.showToast(msg: l.get('msg_recall_failed'));
+    }
+  }
+
+  /// 本地删除消息（仅从界面移除）
+  void _deleteMessageLocally(ChatMessageModel msg) {
+    final l = AppLocalizations.of(context)!;
+    setState(() {
+      _messages.removeWhere((m) => m.id == msg.id);
+    });
+    if (msg.id != null) {
+      ChatDatabase.instance.deleteMessage('group', widget.groupId, msg.id!);
+    }
+    Fluttertoast.showToast(msg: l.get('msg_deleted'));
   }
 
   void _reportMessage(ChatMessageModel msg) {
@@ -1008,7 +1327,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      appBar: AppBar(
+      appBar: _isMultiSelectMode
+          ? AppBar(
+              title: Text('${_selectedMsgIds.length} ${l.get("multi_select_count")}'),
+              leading: IconButton(icon: const Icon(Icons.close, size: 20), onPressed: _exitMultiSelectMode),
+              actions: const [],
+            )
+          : AppBar(
         title: Text(_group?.name ?? '...'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
@@ -1031,12 +1356,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
           ),
           IconButton(
             icon: const Icon(Icons.more_horiz, size: 24),
-            onPressed: () {
-              Navigator.pushNamed(
+            onPressed: () async {
+              await Navigator.pushNamed(
                 context,
                 AppRoutes.groupDetail,
                 arguments: widget.groupId,
               );
+              if (mounted) _loadGroupInfo();
             },
           ),
         ],
@@ -1118,38 +1444,44 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 ),
               ),
 
-            // 受限提示横幅
-            if (_getSendBlockReason(l) != null) _buildRestrictedBanner(l),
+            // 多选模式 / 禁言 / 正常输入 三选一
+            if (_isMultiSelectMode)
+              _buildMultiSelectToolbar(l)
+            else if (_getSendBlockReason(l) != null)
+              _buildRestrictedBanner(l)
+            else ...[
+              // 引用条
+              if (_quotedMsg != null) _buildQuoteBar(),
 
-            // 输入区域
-            _buildInputBar(l),
+              _buildInputBar(l),
 
-            // Emoji picker
-            if (_showEmojiPicker)
-              SizedBox(
-                height: 260,
-                child: EmojiPicker(
-                  onEmojiSelected: (_, emoji) {
-                    _msgCtrl.text += emoji.emoji;
-                    _msgCtrl.selection = TextSelection.collapsed(
-                        offset: _msgCtrl.text.length);
-                  },
-                  config: Config(
-                    columns: 8,
-                    emojiSizeMax: 22 *
-                        (defaultTargetPlatform == TargetPlatform.iOS
-                            ? 1.3
-                            : 1.0),
-                    initCategory: Category.SMILEYS,
-                    indicatorColor: AppTheme.primaryColor,
-                    iconColorSelected: AppTheme.primaryColor,
-                    backspaceColor: AppTheme.primaryColor,
+              // Emoji picker
+              if (_showEmojiPicker)
+                SizedBox(
+                  height: 260,
+                  child: EmojiPicker(
+                    onEmojiSelected: (_, emoji) {
+                      _msgCtrl.text += emoji.emoji;
+                      _msgCtrl.selection = TextSelection.collapsed(
+                          offset: _msgCtrl.text.length);
+                    },
+                    config: Config(
+                      columns: 8,
+                      emojiSizeMax: 22 *
+                          (defaultTargetPlatform == TargetPlatform.iOS
+                              ? 1.3
+                              : 1.0),
+                      initCategory: Category.SMILEYS,
+                      indicatorColor: AppTheme.primaryColor,
+                      iconColorSelected: AppTheme.primaryColor,
+                      backspaceColor: AppTheme.primaryColor,
+                    ),
                   ),
                 ),
-              ),
 
-            // 多媒体面板
-            if (_showMediaPanel) _buildMediaPanel(l),
+              // 多媒体面板
+              if (_showMediaPanel) _buildMediaPanel(l),
+            ],
           ],
         ),
       ),
@@ -1242,21 +1574,19 @@ class _GroupChatPageState extends State<GroupChatPage> {
   // ===== 消息气泡 =====
 
   Widget _buildMessageBubble(ChatMessageModel msg, int? currentUserId) {
-    // 系统通知（"XXX 加入了群聊" 等）：居中灰字胶囊，无头像/昵称/时间
     if (msg.msgType == ChatMsgType.system) {
       return _buildSystemNotice(msg.content);
     }
 
     final isMe = currentUserId != null && msg.userId == currentUserId;
-    // 群内昵称（alias）优先于用户原昵称
     final displayName = _aliasMap[msg.userId] ?? msg.nickname;
 
-    return MessageBubble(
+    Widget bubble = MessageBubble(
       nickname: displayName,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
       avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36, isOfficial: msg.isOfficialService),
-      onLongPress: () => _showMessageActions(msg, isMe),
+      onLongPress: _isMultiSelectMode ? null : (rect) => _showMessageActions(msg, isMe, rect),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
         userId: msg.userId,
@@ -1265,10 +1595,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
         userCode: msg.userCode,
         isOfficial: msg.isOfficialService,
       ),
-      // 长按他人头像 → 直接在输入框插入 @该成员
       onAvatarLongPress: isMe ? null : () => _mentionUserDirectly(msg.userId, displayName),
       content: _buildBubbleContent(msg, isMe),
     );
+
+    if (_isMultiSelectMode) {
+      final selected = msg.id != null && _selectedMsgIds.contains(msg.id);
+      bubble = GestureDetector(
+        onTap: () => _toggleMsgSelection(msg),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 4),
+              child: Icon(
+                selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: selected ? AppTheme.primaryColor : AppTheme.textHint,
+                size: 22,
+              ),
+            ),
+            Expanded(child: bubble),
+          ],
+        ),
+      );
+    }
+
+    return bubble;
   }
 
   /// 直接 @ 指定成员（长按头像触发，不走选择器）
@@ -1317,6 +1669,9 @@ class _GroupChatPageState extends State<GroupChatPage> {
         if (redPacketId > 0) {
           _showRedPacketOpenDialog(redPacketId, msg.nickname, msg.avatar, greeting);
         }
+      },
+      onContactCardTap: (nickname, userCode, avatar) {
+        UserProfilePage.show(context, userId: 0, nickname: nickname, avatar: avatar, userCode: userCode);
       },
     );
   }

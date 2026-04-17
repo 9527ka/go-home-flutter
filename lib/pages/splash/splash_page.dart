@@ -28,9 +28,9 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
     _fadeIn = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _slideUp = Tween<double>(begin: 40, end: 0).animate(
+    _slideUp = Tween<double>(begin: 20, end: 0).animate(
       CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic),
     );
     _animCtrl.forward();
@@ -40,21 +40,21 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   Future<void> _navigate() async {
     final authProvider = context.read<AuthProvider>();
 
-    // 并行：等待 Auth 初始化完成 + 最短动画展示时间（800ms）
-    await Future.wait([
-      _waitForAuth(authProvider),
-      Future.delayed(const Duration(milliseconds: 800)),
-    ]);
+    // 不依赖 auth 的操作立即启动（与 auth 初始化并行）
+    final agreedFuture = PrivacyConsentDialog.hasAgreed();
+    final postProvider = context.read<PostProvider>();
+    postProvider.loadFromCache(); // 从 SharedPreferences 读缓存，不需要 auth
+
+    // 等待 auth 初始化（SharedPreferences 已预热，通常 <50ms）
+    await _waitForAuth(authProvider);
+    final agreed = await agreedFuture; // 已完成，秒返回
 
     if (!mounted) return;
 
     // 首次启动隐私协议弹窗
-    final agreed = await PrivacyConsentDialog.hasAgreed();
     if (!agreed) {
-      if (!mounted) return;
       final consent = await PrivacyConsentDialog.show(context);
       if (!consent) {
-        // 用户拒绝，停留在启动页并显示提示
         if (mounted) setState(() => _needsPrivacyConsent = true);
         return;
       }
@@ -65,24 +65,21 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   }
 
   void _proceedToHome(AuthProvider authProvider) {
-    // 先从缓存加载文章列表（瞬间显示），再从 API 刷新
-    final postProvider = context.read<PostProvider>();
-    postProvider.loadFromCache();
-    postProvider.refresh();
+    // 网络请求全部 fire-and-forget 并行发出
+    context.read<PostProvider>().refresh();
 
-    // 仅登录用户才预加载需要鉴权的数据（游客调用会触发 401）
     if (authProvider.isLoggedIn) {
-      context.read<ChatProvider>().checkUnread();
-      context.read<NotificationProvider>().fetchUnreadCount();
-
-      // 绑定 FriendProvider 到 ChatProvider（接收 WebSocket 好友通知）
+      // 绑定 Provider（同步操作）
       final friendProvider = context.read<FriendProvider>();
       friendProvider.bindChatProvider(context.read<ChatProvider>());
       friendProvider.bindConversationProvider(context.read<ConversationProvider>());
+
+      // 并行发起所有网络预加载
+      context.read<ChatProvider>().checkUnread();
+      context.read<NotificationProvider>().fetchUnreadCount();
       friendProvider.fetchRequestCount();
     }
 
-    // 跳转首页
     Navigator.pushReplacementNamed(context, AppRoutes.home);
   }
 
@@ -95,7 +92,8 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     }
   }
 
-  /// 等待 AuthProvider 初始化完成（最多等 2 秒，超时也跳转）
+  /// 等待 AuthProvider 初始化完成
+  /// SharedPreferences 已在 main() 预热，init 通常 <50ms；200ms 超时兜底
   Future<void> _waitForAuth(AuthProvider auth) async {
     if (auth.initialized) return;
     final completer = Completer<void>();
@@ -106,9 +104,8 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       }
     }
     auth.addListener(listener);
-    // 超时保护：最多等 2 秒
     await completer.future.timeout(
-      const Duration(seconds: 2),
+      const Duration(milliseconds: 200),
       onTimeout: () => auth.removeListener(listener),
     );
   }
@@ -168,13 +165,24 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                     '帮助每一个走失的生命回家',
                     style: TextStyle(fontSize: 15, color: Colors.white.withOpacity(0.85), letterSpacing: 1),
                   ),
-                  const SizedBox(height: 48),
-                  if (!_needsPrivacyConsent)
+                  const SizedBox(height: 32),
+                  if (!_needsPrivacyConsent) ...[
+                    Text(
+                      '欢迎回家',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '请稍候...',
+                      style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.6)),
+                    ),
+                    const SizedBox(height: 20),
                     SizedBox(
                       width: 28,
                       height: 28,
                       child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white.withOpacity(0.7)),
                     ),
+                  ],
                   // 用户拒绝隐私协议后显示提示和重试按钮
                   if (_needsPrivacyConsent) ...[
                     Text(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -30,12 +31,11 @@ class _BoostDialogState extends State<BoostDialog> {
     final totalCost = appConfig.boostHourlyRate * _selectedHours;
     final balance = context.read<WalletProvider>().balance;
     if (totalCost > balance) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l.get('insufficient_balance')), backgroundColor: AppTheme.dangerColor),
-      );
+      Fluttertoast.showToast(msg: l.get('insufficient_balance'));
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isSubmitting = true);
     try {
       final res = await _walletService.boost(postId: widget.postId, hours: _selectedHours);
@@ -43,23 +43,24 @@ class _BoostDialogState extends State<BoostDialog> {
         if (res['code'] == 0) {
           context.read<WalletProvider>().refresh();
           Navigator.pop(context, true);
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(content: Text(l.get('boost_success')), backgroundColor: AppTheme.successColor),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
+          Navigator.pop(context);
+          messenger.showSnackBar(
             SnackBar(content: Text(res['msg'] ?? l.get('operation_failed')), backgroundColor: AppTheme.dangerColor),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        Navigator.pop(context);
+        messenger.showSnackBar(
           SnackBar(content: Text(l.get('network_error')), backgroundColor: AppTheme.dangerColor),
         );
       }
     }
-    if (mounted) setState(() => _isSubmitting = false);
   }
 
   @override

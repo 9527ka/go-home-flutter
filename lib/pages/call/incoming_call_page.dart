@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:vibration/vibration.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/call_signaling_service.dart';
@@ -22,19 +22,8 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
   @override
   void initState() {
     super.initState();
-    _startVibrate();
-  }
-
-  @override
-  void dispose() {
-    Vibration.cancel();
-    super.dispose();
-  }
-
-  Future<void> _startVibrate() async {
-    if (await Vibration.hasVibrator() ?? false) {
-      Vibration.vibrate(pattern: [500, 1000, 500, 1000], repeat: 0);
-    }
+    // vibration 包已禁用，使用系统触觉反馈代替
+    HapticFeedback.heavyImpact();
   }
 
   @override
@@ -44,7 +33,6 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        Vibration.cancel();
         context.read<CallSignalingService>().decline();
       },
       child: Scaffold(
@@ -100,7 +88,6 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
                         color: AppTheme.dangerColor,
                         label: l.get('voice_call_decline'),
                         onTap: () {
-                          Vibration.cancel();
                           call.decline();
                         },
                       ),
@@ -109,7 +96,6 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
                         color: AppTheme.successColor,
                         label: l.get('voice_call_answer'),
                         onTap: () async {
-                          Vibration.cancel();
                           await call.accept();
                         },
                       ),

@@ -63,10 +63,15 @@ class ConversationModel {
         return tr('media_red_packet');
       case 'voice_call':
         return tr('media_voice_call');
+      case 'contact_card':
+        return tr('media_contact_card');
       default:
-        // 兜底：如果 lastMsgType 未正确上报但 lastMessage 是红包 JSON，也识别为 [红包]
         if (lastMessage.startsWith('{') && lastMessage.contains('red_packet_id')) {
           return tr('media_red_packet');
+        }
+        // 名片消息兜底（JSON 或 [xxx] 前缀格式）
+        if (lastMessage.contains('contact_card') || lastMessage.contains('contact]')) {
+          return tr('media_contact_card');
         }
         return lastMessage;
     }

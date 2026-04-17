@@ -98,6 +98,10 @@ class ApiConfig {
   static const String pmConversations = '/api/pm/conversations';
   static const String pmRead = '/api/pm/read';
   static const String pmMute = '/api/pm/mute';
+  static const String pmRecall = '/api/pm/recall';
+
+  // 群聊消息撤回
+  static const String groupRecall = '/api/group/recall';
 
   // 腾讯云 TRTC（私聊语音通话）
   static const String rtcUserSig = '/api/rtc/user-sig';

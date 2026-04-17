@@ -11,12 +11,14 @@ class ProfileHeader extends StatelessWidget {
   final dynamic user;
   final bool isLoggedIn;
   final bool walletEnabled;
+  final VoidCallback? onQrTap;
 
   const ProfileHeader({
     super.key,
     required this.user,
     required this.isLoggedIn,
     required this.walletEnabled,
+    this.onQrTap,
   });
 
   /// System avatar color and icon mapping.
@@ -38,8 +40,8 @@ class ProfileHeader extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
 
     return Container(
-      padding: const EdgeInsets.only(
-        top: 20,
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 16,
         left: 24,
         right: 24,
         bottom: 28,
@@ -57,6 +59,46 @@ class ProfileHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // 导航栏：返回 + 标题 + 扫一扫
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  l.get('profile'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ),
+              if (onQrTap != null)
+                GestureDetector(
+                  onTap: onQrTap,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.qr_code, size: 18, color: Colors.white),
+                  ),
+                )
+              else
+                const SizedBox(width: 36),
+            ],
+          ),
+          const SizedBox(height: 20),
 
           // Avatar row: avatar + user info + sign-in button
           Row(

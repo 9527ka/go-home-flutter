@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -144,30 +145,15 @@ class ChangePasswordDialog {
                             final confirmPwd = confirmPasswordCtrl.text;
 
                             if (newPwd.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(l.get('password_empty')),
-                                  backgroundColor: AppTheme.dangerColor,
-                                ),
-                              );
+                              Fluttertoast.showToast(msg: l.get('password_empty'));
                               return;
                             }
                             if (newPwd.length < 6) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(l.get('password_too_short')),
-                                  backgroundColor: AppTheme.dangerColor,
-                                ),
-                              );
+                              Fluttertoast.showToast(msg: l.get('password_too_short'));
                               return;
                             }
                             if (newPwd != confirmPwd) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(l.get('password_mismatch')),
-                                  backgroundColor: AppTheme.dangerColor,
-                                ),
-                              );
+                              Fluttertoast.showToast(msg: l.get('password_mismatch'));
                               return;
                             }
 
@@ -183,20 +169,16 @@ class ChangePasswordDialog {
                             setModalState(() => isSaving = false);
 
                             if (error == null) {
+                              final messenger = ScaffoldMessenger.of(context);
                               Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(l.get('password_change_success')),
                                   backgroundColor: AppTheme.successColor,
                                 ),
                               );
                             } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(error),
-                                  backgroundColor: AppTheme.dangerColor,
-                                ),
-                              );
+                              Fluttertoast.showToast(msg: error);
                             }
                           },
                     style: ElevatedButton.styleFrom(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -44,21 +45,16 @@ class _DonateDialogState extends State<DonateDialog> {
   Future<void> _submit() async {
     final l = AppLocalizations.of(context)!;
     if (_amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l.get('please_select_amount')), backgroundColor: AppTheme.dangerColor),
-      );
+      Fluttertoast.showToast(msg: l.get('please_select_amount'));
       return;
     }
-
-    // 爱心值不足检查
     final balance = context.read<WalletProvider>().balance;
     if (_amount > balance) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l.get('insufficient_balance')), backgroundColor: AppTheme.dangerColor),
-      );
+      Fluttertoast.showToast(msg: l.get('insufficient_balance'));
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isSubmitting = true);
     try {
       final res = await _walletService.donate(
@@ -71,23 +67,24 @@ class _DonateDialogState extends State<DonateDialog> {
         if (res['code'] == 0) {
           context.read<WalletProvider>().refresh();
           Navigator.pop(context, true);
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(content: Text(l.get('donate_success')), backgroundColor: AppTheme.successColor),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
+          Navigator.pop(context);
+          messenger.showSnackBar(
             SnackBar(content: Text(res['msg'] ?? l.get('operation_failed')), backgroundColor: AppTheme.dangerColor),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        Navigator.pop(context);
+        messenger.showSnackBar(
           SnackBar(content: Text(l.get('network_error')), backgroundColor: AppTheme.dangerColor),
         );
       }
     }
-    if (mounted) setState(() => _isSubmitting = false);
   }
 
   @override

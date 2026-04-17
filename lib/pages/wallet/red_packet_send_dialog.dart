@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import '../../config/currency.dart';
 import '../../config/theme.dart';
@@ -44,13 +45,16 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
     final count = _isPrivate ? 1 : (int.tryParse(_countController.text.trim()) ?? 0);
 
     if (amount <= 0) {
-      _showSnack(l.get('please_enter_amount'));
+      Fluttertoast.showToast(msg: l.get('please_enter_amount'));
       return;
     }
     if (!_isPrivate && count <= 0) {
-      _showSnack(l.get('please_enter_count'));
+      Fluttertoast.showToast(msg: l.get('please_enter_count'));
       return;
     }
+
+    // 提前捕获父级 ScaffoldMessenger，关闭 Dialog 后仍可弹提示
+    final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _isSubmitting = true);
     try {
@@ -66,19 +70,22 @@ class _RedPacketSendDialogState extends State<RedPacketSendDialog> {
           context.read<WalletProvider>().refresh();
           Navigator.pop(context, res['data']);
         } else {
-          _showSnack(res['msg'] ?? l.get('operation_failed'));
+          final errMsg = res['msg'] ?? l.get('operation_failed');
+          Navigator.pop(context);
+          messenger.showSnackBar(
+            SnackBar(content: Text(errMsg), backgroundColor: AppTheme.dangerColor),
+          );
         }
       }
     } catch (e) {
-      if (mounted) _showSnack(l.get('network_error'));
+      if (mounted) {
+        final errMsg = l.get('network_error');
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          SnackBar(content: Text(errMsg), backgroundColor: AppTheme.dangerColor),
+        );
+      }
     }
-    if (mounted) setState(() => _isSubmitting = false);
-  }
-
-  void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppTheme.dangerColor),
-    );
   }
 
   @override

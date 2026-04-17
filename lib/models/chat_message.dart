@@ -8,6 +8,7 @@ enum ChatMsgType {
   voice,
   redPacket,
   voiceCall,
+  contactCard, // 个人名片
   system, // 系统通知（"XXX 加入了群聊" 等），居中灰字渲染
 }
 
@@ -111,19 +112,28 @@ class ChatMessageModel {
       userCode: json['user_code'] ?? fromUser?['user_code'] ?? user?['user_code'] ?? '',
       nickname: json['nickname'] ?? json['from_nickname'] ?? fromUser?['nickname'] ?? user?['nickname'] ?? '',
       avatar: json['avatar'] ?? json['from_avatar'] ?? fromUser?['avatar'] ?? user?['avatar'] ?? '',
-      msgType: _parseMsgType(json['msg_type']),
+      msgType: parseMsgType(json['msg_type']),
       content: json['content'] ?? '',
       mediaUrl: json['media_url'] ?? '',
       thumbUrl: json['thumb_url'] ?? '',
-      mediaInfo: json['media_info'] is Map<String, dynamic>
-          ? json['media_info'] as Map<String, dynamic>
-          : null,
+      mediaInfo: _parseMediaInfo(json['media_info']),
       createdAt: json['created_at'] ?? '',
       userType: json['user_type'] ?? fromUser?['user_type'] ?? user?['user_type'] ?? 0,
       mentions: _parseMentions(json['mentions']),
       clientMsgId: json['client_msg_id'] as String?,
       sendStatus: SendStatus.sent,
     );
+  }
+
+  static Map<String, dynamic>? _parseMediaInfo(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is String && value.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map<String, dynamic>) return decoded;
+      } catch (_) {}
+    }
+    return null;
   }
 
   static List<int> _parseMentions(dynamic value) {
@@ -155,7 +165,7 @@ class ChatMessageModel {
 
   bool get isOfficialService => userType == 1;
 
-  static ChatMsgType _parseMsgType(dynamic value) {
+  static ChatMsgType parseMsgType(dynamic value) {
     if (value is String) {
       switch (value) {
         case 'image':
@@ -168,6 +178,8 @@ class ChatMessageModel {
           return ChatMsgType.redPacket;
         case 'voice_call':
           return ChatMsgType.voiceCall;
+        case 'contact_card':
+          return ChatMsgType.contactCard;
         case 'system':
           return ChatMsgType.system;
         default:
@@ -189,6 +201,8 @@ class ChatMessageModel {
         return 'red_packet';
       case ChatMsgType.voiceCall:
         return 'voice_call';
+      case ChatMsgType.contactCard:
+        return 'contact_card';
       case ChatMsgType.system:
         return 'system';
       case ChatMsgType.text:

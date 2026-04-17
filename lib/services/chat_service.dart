@@ -64,6 +64,23 @@ class ChatService {
     return res['code'] == 0;
   }
 
+  /// 撤回私聊消息
+  Future<bool> recallPrivateMessage(int messageId) async {
+    final res = await _http.post(ApiConfig.pmRecall, data: {
+      'message_id': messageId,
+    });
+    return res['code'] == 0;
+  }
+
+  /// 撤回群聊消息
+  Future<bool> recallGroupMessage(int messageId, int groupId) async {
+    final res = await _http.post(ApiConfig.groupRecall, data: {
+      'message_id': messageId,
+      'group_id': groupId,
+    });
+    return res['code'] == 0;
+  }
+
   /// 举报/屏蔽用户
   Future<bool> reportUser(int userId, {String reason = ''}) async {
     final res = await _http.post(ApiConfig.reportCreate, data: {

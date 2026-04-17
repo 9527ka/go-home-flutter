@@ -190,7 +190,11 @@ class ConversationProvider extends ChangeNotifier {
     if (friendId <= 0) return;
 
     final content = data['content'] as String? ?? '';
-    final msgType = data['msg_type'] as String? ?? 'text';
+    var msgType = data['msg_type'] as String? ?? 'text';
+    // 名片 JSON 自动识别为 contact_card 类型
+    if (msgType == 'text' && content.startsWith('{') && content.contains('contact_card')) {
+      msgType = 'contact_card';
+    }
     final time = data['created_at'] as String? ?? DateTime.now().toIso8601String();
 
     // 对方的昵称和头像（用于新建会话时显示）
@@ -233,7 +237,10 @@ class ConversationProvider extends ChangeNotifier {
     if (groupId <= 0) return;
 
     final content = data['content'] as String? ?? '';
-    final msgType = data['msg_type'] as String? ?? 'text';
+    var msgType = data['msg_type'] as String? ?? 'text';
+    if (msgType == 'text' && content.startsWith('{') && content.contains('contact_card')) {
+      msgType = 'contact_card';
+    }
     final time = data['created_at'] as String? ?? DateTime.now().toIso8601String();
 
     // 群组名（如果服务端推送中包含的话）

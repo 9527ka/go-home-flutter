@@ -6,6 +6,7 @@ import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../utils/url_helper.dart';
+import '../../widgets/avatar_widget.dart';
 import '../../widgets/red_packet_card.dart';
 
 /// Builds the appropriate bubble content widget based on message type.
@@ -16,6 +17,7 @@ class BubbleContent extends StatelessWidget {
   final VoidCallback? onVideoTap;
   final VoidCallback? onVoiceTap;
   final VoidCallback? onRedPacketTap;
+  final void Function(String nickname, String userCode, String avatar)? onContactCardTap;
   final bool isVoicePlaying;
   /// Optional mini-wave widget shown when voice is playing (only used by public chat)
   final Widget? voicePlayingWave;
@@ -30,6 +32,7 @@ class BubbleContent extends StatelessWidget {
     this.onVideoTap,
     this.onVoiceTap,
     this.onRedPacketTap,
+    this.onContactCardTap,
     this.isVoicePlaying = false,
     this.voicePlayingWave,
     this.hasClaimed = false,
@@ -48,10 +51,14 @@ class BubbleContent extends StatelessWidget {
         return _buildRedPacketBubble();
       case ChatMsgType.voiceCall:
         return _buildVoiceCallBubble(context);
+      case ChatMsgType.contactCard:
+        return _buildContactCardBubble(context);
       case ChatMsgType.system:
         // 系统消息由外层居中渲染，不走气泡布局
         return const SizedBox.shrink();
       case ChatMsgType.text:
+        // 兼容：mediaInfo 或 content 含名片数据时按名片渲染
+        if (_isContactCardContent()) return _buildContactCardBubble(context);
         return _buildTextBubble();
     }
   }
@@ -345,6 +352,151 @@ class BubbleContent extends StatelessWidget {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '${m.toString().padLeft(1, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// 判断是否为名片消息
+  bool _isContactCardContent() {
+    // 优先检查 mediaInfo
+    if (msg.mediaInfo != null && msg.mediaInfo!['card_type'] == 'contact') return true;
+    // 兜底检查 content（JSON 格式或 [个人名片] 前缀）
+    final c = msg.content;
+    if (c.startsWith('[') && c.contains(']') && c.length < 200) {
+      // [个人名片] xxx 格式
+      final bracket = c.indexOf(']');
+      if (bracket > 0 && bracket < 20) return true;
+    }
+    if (c.startsWith('{')) {
+      try {
+        final data = jsonDecode(c) as Map<String, dynamic>;
+        if (data['type'] == 'contact_card') return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// 解析名片数据（mediaInfo > content JSON > content文本）
+  ({String nickname, String userCode, String avatar}) _parseCardData() {
+    // 1. 从 mediaInfo 读
+    final mi = msg.mediaInfo;
+    if (mi != null && mi['card_type'] == 'contact') {
+      return (
+        nickname: mi['nickname'] as String? ?? '',
+        userCode: mi['user_code'] as String? ?? '',
+        avatar: mi['avatar'] as String? ?? '',
+      );
+    }
+    // 2. 从 content JSON 读
+    final c = msg.content;
+    if (c.startsWith('{')) {
+      try {
+        final data = jsonDecode(c) as Map<String, dynamic>;
+        return (
+          nickname: data['nickname'] as String? ?? '',
+          userCode: data['user_code'] as String? ?? '',
+          avatar: data['avatar'] as String? ?? '',
+        );
+      } catch (_) {}
+    }
+    // 3. 从 "[个人名片] xxx" 文本读
+    final bracket = c.indexOf(']');
+    if (bracket > 0) {
+      final name = c.substring(bracket + 1).trim();
+      return (nickname: name, userCode: '', avatar: '');
+    }
+    return (nickname: '', userCode: '', avatar: '');
+  }
+
+  /// 微信风格名片气泡
+  Widget _buildContactCardBubble(BuildContext context) {
+    final card = _parseCardData();
+    final nickname = card.nickname;
+    final userCode = card.userCode;
+    final avatar = card.avatar;
+    final l = AppLocalizations.of(context)!;
+
+    return GestureDetector(
+      onTap: onContactCardTap != null ? () => onContactCardTap!(nickname, userCode, avatar) : null,
+      child: Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: isMe ? AppTheme.primaryColor : AppTheme.cardBg,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(isMe ? 14 : 4),
+          topRight: Radius.circular(isMe ? 4 : 14),
+          bottomLeft: const Radius.circular(14),
+          bottomRight: const Radius.circular(14),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 上半部分：头像 + 昵称
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            child: Row(
+              children: [
+                AvatarWidget(
+                  avatarPath: avatar,
+                  name: nickname,
+                  size: 40,
+                  borderRadius: 8,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        nickname,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: isMe ? Colors.white : AppTheme.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (userCode.isNotEmpty)
+                        Text(
+                          'ID: $userCode',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isMe ? Colors.white70 : AppTheme.textHint,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // 分割线
+          Container(
+            height: 0.5,
+            color: isMe ? Colors.white.withOpacity(0.15) : AppTheme.dividerColor,
+          ),
+          // 底部标签
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Text(
+              l.get('contact_card_label'),
+              style: TextStyle(
+                fontSize: 11,
+                color: isMe ? Colors.white60 : AppTheme.textHint,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),  // GestureDetector
+    );
   }
 }
 

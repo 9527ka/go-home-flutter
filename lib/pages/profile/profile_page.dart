@@ -14,6 +14,9 @@ import '../../widgets/delete_account_dialog.dart';
 import '../../widgets/profile/profile_header.dart';
 import '../../widgets/profile/profile_menu_item.dart';
 import '../../widgets/profile/wallet_card.dart';
+import 'cache_management_page.dart';
+import 'my_qr_code_page.dart';
+import 'scan_qr_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -48,9 +51,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      appBar: AppBar(
-        title: Text(l.get('profile')),
-      ),
       body: RefreshIndicator(
         onRefresh: () async {
           final auth = context.read<AuthProvider>();
@@ -71,6 +71,9 @@ class _ProfilePageState extends State<ProfilePage> {
               user: user,
               isLoggedIn: auth.isLoggedIn,
               walletEnabled: appConfig.walletEnabled,
+              onQrTap: auth.isLoggedIn
+                  ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyQrCodePage()))
+                  : null,
             ),
           ),
 
@@ -150,6 +153,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: l.get('account_settings'),
                       subtitle: l.get('account_settings_subtitle'),
                       onTap: () => Navigator.pushNamed(context, AppRoutes.accountSettings),
+                    ),
+                    const Divider(indent: 58, height: 0.5),
+                    ProfileMenuItem(
+                      icon: Icons.storage_outlined,
+                      iconColor: AppTheme.warningColor,
+                      title: l.get('cache_management'),
+                      subtitle: l.get('cache_management_subtitle'),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CacheManagementPage())),
                     ),
                     const Divider(indent: 58, height: 0.5),
                   ],

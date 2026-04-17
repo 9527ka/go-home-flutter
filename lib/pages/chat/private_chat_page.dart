@@ -22,7 +22,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
-import '../../services/call_signaling_service.dart';
+// import '../../services/call_signaling_service.dart'; // 语音通话暂时关闭
+import '../../services/chat_database.dart';
 import '../../services/chat_service.dart';
 import '../../services/pm_service.dart';
 import '../../services/wallet_service.dart';
@@ -35,6 +36,7 @@ import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/message_bubble.dart';
 import '../../widgets/chat/bubble_content.dart';
 import '../../widgets/chat/message_actions.dart';
+import '../../widgets/chat/forward_helper.dart';
 import '../friend/user_profile_page.dart';
 import 'private_chat_detail_page.dart';
 import '../wallet/red_packet_send_dialog.dart';
@@ -117,6 +119,13 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   // 语音播放
   int? _playingMsgId;
 
+  // 多选模式
+  bool _isMultiSelectMode = false;
+  final Set<int> _selectedMsgIds = {}; // message id 集合
+
+  // 引用回复
+  ChatMessageModel? _quotedMsg;
+
   @override
   void initState() {
     super.initState();
@@ -175,6 +184,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     final chatProvider = context.read<ChatProvider>();
     chatProvider.registerHandler('private_message', _onPrivateMessage);
     chatProvider.registerHandler('error', _onServerError);
+    chatProvider.registerHandler('pm_recall', _onRecallMessage);
   }
 
   void _unregisterWsHandler() {
@@ -182,7 +192,31 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       final chatProvider = context.read<ChatProvider>();
       chatProvider.removeHandler('private_message', _onPrivateMessage);
       chatProvider.removeHandler('error', _onServerError);
+      chatProvider.removeHandler('pm_recall', _onRecallMessage);
     } catch (_) {}
+  }
+
+  /// 收到对方撤回消息的推送
+  void _onRecallMessage(Map<String, dynamic> data) {
+    final messageId = data['message_id'] as int? ?? 0;
+    // 过滤：仅处理当前会话的撤回
+    final fromId = data['from_id'] ?? data['user_id'] ?? 0;
+    if (messageId <= 0 || !mounted) return;
+    if (fromId != widget.friendId && fromId != context.read<AuthProvider>().user?.id) return;
+    final l = AppLocalizations.of(context)!;
+    setState(() {
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        _messages[idx] = ChatMessageModel(
+          id: messageId,
+          userId: _messages[idx].userId,
+          nickname: _messages[idx].nickname,
+          content: l.get('msg_recalled_by_other'),
+          msgType: ChatMsgType.system,
+          createdAt: _messages[idx].createdAt,
+        );
+      }
+    });
   }
 
   // 生成一个唯一的 client_msg_id（用于匹配乐观消息与服务端回执/错误）
@@ -256,11 +290,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         _messages.add(msg);
       });
       _scrollToBottomIfNeeded();
+      // 持久化到 SQLite
+      final db = ChatDatabase.instance;
+      if (db.isOpen) db.upsertMessage('private', widget.friendId, msg);
     }
   }
 
   Future<void> _loadHistory() async {
-    // 优先使用进程内缓存（页面导航不重新请求，仅进程被杀后才从服务端加载）
+    // L1: 进程内缓存
     final cache = _chatCaches[widget.friendId];
     if (cache != null) {
       setState(() {
@@ -278,42 +315,98 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     }
 
     setState(() => _isLoading = true);
-    try {
-      // 读取清空时间戳，过滤掉清空之前的消息
-      final prefs = await SharedPreferences.getInstance();
-      final clearedAtStr = prefs.getString('chat_cleared_at_${widget.friendId}');
-      DateTime? clearedAt;
-      if (clearedAtStr != null) {
-        clearedAt = DateTime.tryParse(clearedAtStr);
-      }
 
-      final data = await _pmService.getHistory(friendId: widget.friendId, limit: 20);
-      final list = data['list'] as List? ?? [];
-      if (mounted) {
+    final prefs = await SharedPreferences.getInstance();
+    final clearedAtStr = prefs.getString('chat_cleared_at_${widget.friendId}');
+    DateTime? clearedAt;
+    if (clearedAtStr != null) clearedAt = DateTime.tryParse(clearedAtStr);
+
+    // L2: SQLite 本地数据库
+    final db = ChatDatabase.instance;
+    if (db.isOpen) {
+      final dbMessages = await db.getMessages(
+        chatType: 'private', chatId: widget.friendId, limit: 20, afterTime: clearedAt,
+      );
+      if (dbMessages.isNotEmpty && mounted) {
         setState(() {
           _messages.clear();
           _messageIds.clear();
-          final loaded = list.map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>));
+          for (final msg in dbMessages) {
+            if (msg.id != null) _messageIds.add(msg.id!);
+            _messages.add(msg);
+          }
+          _hasMore = dbMessages.length >= 20;
+          _isLoading = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animate: false));
+        // 后台同步 API 最新消息
+        _backgroundSyncFromApi(clearedAt);
+        return;
+      }
+    }
+
+    // L3: 服务端 API
+    try {
+      final data = await _pmService.getHistory(friendId: widget.friendId, limit: 20);
+      final list = data['list'] as List? ?? [];
+      if (mounted) {
+        final loaded = <ChatMessageModel>[];
+        for (final e in list) {
+          final msg = ChatMessageModel.fromJson(e as Map<String, dynamic>);
+          if (clearedAt != null && msg.createdAt.isNotEmpty) {
+            final t = DateTime.tryParse(msg.createdAt);
+            if (t != null && t.isBefore(clearedAt)) continue;
+          }
+          loaded.add(msg);
+        }
+        setState(() {
+          _messages.clear();
+          _messageIds.clear();
           for (final msg in loaded) {
-            // 过滤清空之前的消息
-            if (clearedAt != null && msg.createdAt.isNotEmpty) {
-              final msgTime = DateTime.tryParse(msg.createdAt);
-              if (msgTime != null && msgTime.isBefore(clearedAt)) continue;
-            }
             if (msg.id != null) _messageIds.add(msg.id!);
             _messages.add(msg);
           }
           _hasMore = data['has_more'] == true;
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToBottom(animate: false);
-        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animate: false));
+        // 持久化到 SQLite
+        if (db.isOpen) db.batchUpsert('private', widget.friendId, loaded);
       }
     } catch (e) {
       debugPrint('[PrivateChat] loadHistory error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// 后台从 API 同步最新消息并写入 SQLite（不阻塞 UI）
+  Future<void> _backgroundSyncFromApi(DateTime? clearedAt) async {
+    try {
+      final data = await _pmService.getHistory(friendId: widget.friendId, limit: 20);
+      final list = data['list'] as List? ?? [];
+      final loaded = <ChatMessageModel>[];
+      for (final e in list) {
+        final msg = ChatMessageModel.fromJson(e as Map<String, dynamic>);
+        if (clearedAt != null && msg.createdAt.isNotEmpty) {
+          final t = DateTime.tryParse(msg.createdAt);
+          if (t != null && t.isBefore(clearedAt)) continue;
+        }
+        loaded.add(msg);
+      }
+      final db = ChatDatabase.instance;
+      if (db.isOpen) await db.batchUpsert('private', widget.friendId, loaded);
+      // 检查是否有新消息需要补充到列表
+      if (mounted && loaded.isNotEmpty) {
+        setState(() {
+          for (final msg in loaded) {
+            if (msg.id != null && !_messageIds.contains(msg.id)) {
+              _messageIds.add(msg.id!);
+              _messages.add(msg);
+            }
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   /// 保存当前消息到进程内缓存
@@ -335,23 +428,42 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
     try {
       final firstMsgId = _messages.first.id;
-      final data = await _pmService.getHistory(
-        friendId: widget.friendId,
-        beforeId: firstMsgId,
-        limit: 20,
-      );
-      final list = data['list'] as List? ?? [];
-      if (mounted) {
-        final older = list
+
+      // 优先从 SQLite 加载
+      final db = ChatDatabase.instance;
+      List<ChatMessageModel> older = [];
+      if (db.isOpen && firstMsgId != null) {
+        older = await db.getMessages(
+          chatType: 'private', chatId: widget.friendId, beforeId: firstMsgId, limit: 20,
+        );
+      }
+
+      bool hasMoreFromSource;
+      if (older.isEmpty) {
+        // SQLite 无数据，从 API 加载
+        final data = await _pmService.getHistory(
+          friendId: widget.friendId, beforeId: firstMsgId, limit: 20,
+        );
+        final list = data['list'] as List? ?? [];
+        older = list
             .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
             .where((msg) => msg.id == null || !_messageIds.contains(msg.id))
             .toList();
+        hasMoreFromSource = data['has_more'] == true;
+        // 写入 SQLite
+        if (db.isOpen && older.isNotEmpty) db.batchUpsert('private', widget.friendId, older);
+      } else {
+        older = older.where((msg) => msg.id == null || !_messageIds.contains(msg.id)).toList();
+        hasMoreFromSource = older.length >= 20;
+      }
+
+      if (mounted) {
         setState(() {
           for (final msg in older) {
             if (msg.id != null) _messageIds.add(msg.id!);
           }
           _messages.insertAll(0, older);
-          _hasMore = data['has_more'] == true;
+          _hasMore = hasMoreFromSource;
         });
 
         // 保持滚动位置
@@ -419,11 +531,20 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty) return;
 
+    // 引用时在消息前加引用前缀
+    String sendContent = text;
+    if (_quotedMsg != null) {
+      final quoteName = _quotedMsg!.nickname;
+      final quoteText = _quotedMsg!.msgType == ChatMsgType.text
+          ? _quotedMsg!.content
+          : '[${_quotedMsg!.msgTypeStr}]';
+      sendContent = '「$quoteName: $quoteText」\n- - - - - -\n$text';
+    }
+
     final chatProvider = context.read<ChatProvider>();
     final clientMsgId = _nextClientMsgId();
-    chatProvider.sendPrivateMessage(widget.friendId, text, clientMsgId: clientMsgId);
+    chatProvider.sendPrivateMessage(widget.friendId, sendContent, clientMsgId: clientMsgId);
 
-    // 更新会话列表
     context.read<ConversationProvider>().onMessageSent(
       targetId: widget.friendId,
       targetType: 'private',
@@ -432,19 +553,19 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       avatar: widget.friendAvatar,
     );
 
-    // 乐观本地添加（sending 状态，等待服务端回执或 error）
     final user = auth.user!;
     final localMsg = ChatMessageModel(
       userId: user.id,
       nickname: user.nickname,
       avatar: user.avatar,
-      content: text,
+      content: sendContent,
       createdAt: DateTime.now().toIso8601String(),
       clientMsgId: clientMsgId,
       sendStatus: SendStatus.sending,
     );
     setState(() {
       _messages.add(localMsg);
+      _quotedMsg = null;
     });
     _msgCtrl.clear();
     _scrollToBottomIfNeeded();
@@ -738,7 +859,16 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBg,
-      appBar: AppBar(
+      appBar: _isMultiSelectMode
+          ? AppBar(
+              title: Text('${_selectedMsgIds.length} ${l.get("multi_select_count")}'),
+              leading: IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: _exitMultiSelectMode,
+              ),
+              actions: const [],
+            )
+          : AppBar(
         title: Text(widget.friendName),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
@@ -827,45 +957,53 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                         ),
             ),
 
-            // 上传指示器
-            if (_isUploading)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                    SizedBox(width: 8),
-                    Text('Uploading...', style: TextStyle(fontSize: 12, color: AppTheme.textHint)),
-                  ],
-                ),
-              ),
-
-            // 输入区域
-            _buildInputBar(l),
-
-            // Emoji picker
-            if (_showEmojiPicker)
-              SizedBox(
-                height: 260,
-                child: EmojiPicker(
-                  onEmojiSelected: (_, emoji) {
-                    _msgCtrl.text += emoji.emoji;
-                    _msgCtrl.selection = TextSelection.collapsed(offset: _msgCtrl.text.length);
-                  },
-                  config: Config(
-                    columns: 8,
-                    emojiSizeMax: 22 * (defaultTargetPlatform == TargetPlatform.iOS ? 1.3 : 1.0),
-                    initCategory: Category.SMILEYS,
-                    indicatorColor: AppTheme.primaryColor,
-                    iconColorSelected: AppTheme.primaryColor,
-                    backspaceColor: AppTheme.primaryColor,
+            // 多选模式：底部工具栏替换输入区域
+            if (_isMultiSelectMode)
+              _buildMultiSelectToolbar(l)
+            else ...[
+              // 上传指示器
+              if (_isUploading)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(width: 8),
+                      Text('Uploading...', style: TextStyle(fontSize: 12, color: AppTheme.textHint)),
+                    ],
                   ),
                 ),
-              ),
 
-            // 多媒体面板
-            if (_showMediaPanel) _buildMediaPanel(l),
+              // 引用条
+              if (_quotedMsg != null) _buildQuoteBar(),
+
+              // 输入区域
+              _buildInputBar(l),
+
+              // Emoji picker
+              if (_showEmojiPicker)
+                SizedBox(
+                  height: 260,
+                  child: EmojiPicker(
+                    onEmojiSelected: (_, emoji) {
+                      _msgCtrl.text += emoji.emoji;
+                      _msgCtrl.selection = TextSelection.collapsed(offset: _msgCtrl.text.length);
+                    },
+                    config: Config(
+                      columns: 8,
+                      emojiSizeMax: 22 * (defaultTargetPlatform == TargetPlatform.iOS ? 1.3 : 1.0),
+                      initCategory: Category.SMILEYS,
+                      indicatorColor: AppTheme.primaryColor,
+                      iconColorSelected: AppTheme.primaryColor,
+                      backspaceColor: AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+
+              // 多媒体面板
+              if (_showMediaPanel) _buildMediaPanel(l),
+            ],
           ],
         ),
       ),
@@ -925,7 +1063,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       onSendRedPacket: context.read<AppConfigProvider>().walletEnabled
           ? _showRedPacketDialog
           : null,
-      onVoiceCall: defaultTargetPlatform == TargetPlatform.iOS ? null : _startVoiceCall,
+      onVoiceCall: null, // 语音通话暂时关闭
       pickImageLabel: l.get('chat_album'),
       takePhotoLabel: l.get('take_photo'),
       pickVideoLabel: l.get('chat_video'),
@@ -934,69 +1072,23 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     );
   }
 
-  /// 发起 1v1 语音通话（第一次点击运行 TRTC 独立测试，第二次正常拨号）
-  bool _trtcTestPassed = false;
-
-  Future<void> _startVoiceCall() async {
-    setState(() => _showMediaPanel = false);
-
-    // ── 首次点击：运行 TRTC 独立进房测试 ──
-    if (!_trtcTestPassed) {
-      await CallSignalingService.instance.testEnterRoom();
-      _trtcTestPassed = true;
-      return;
-    }
-
-    // ── 第二次点击：正常发起通话 ──
-    final l = AppLocalizations.of(context)!;
-    final call = CallSignalingService.instance;
-    call.ensureAttached(context.read<ChatProvider>());
-    final err = await call.invite(
-      toUserId: widget.friendId,
-      peerNickname: widget.friendName,
-      peerAvatar: widget.friendAvatar,
-    );
-    if (err != CallInviteError.none && mounted) {
-      String msg;
-      switch (err) {
-        case CallInviteError.alreadyInCall:
-          msg = l.get('voice_call_init_failed') + ' (already in call)';
-          break;
-        case CallInviteError.wsNotAuthenticated:
-          final ws = context.read<ChatProvider>().connectionState;
-          msg = l.get('voice_call_init_failed') + ' (WS: $ws)';
-          break;
-        case CallInviteError.micPermissionDenied:
-          msg = l.get('voice_call_permission_denied');
-          break;
-        case CallInviteError.userSigFailed:
-          msg = l.get('voice_call_init_failed') + ' (UserSig failed)';
-          break;
-        case CallInviteError.rtcInitFailed:
-          msg = l.get('voice_call_init_failed') + ' (TRTC init failed)';
-          break;
-        case CallInviteError.none:
-          return;
-      }
-      Fluttertoast.showToast(msg: msg, toastLength: Toast.LENGTH_LONG);
-    }
-  }
+  // 语音通话暂时关闭
+  // Future<void> _startVoiceCall() async { ... }
 
   // ===== 消息气泡 =====
 
   Widget _buildMessageBubble(ChatMessageModel msg, int? currentUserId) {
     final isMe = currentUserId != null && msg.userId == currentUserId;
-    // 对方消息：如果 API 未返回头像，用页面传入的好友头像兜底
     final avatarPath = msg.avatar.isNotEmpty
         ? msg.avatar
         : (isMe ? '' : widget.friendAvatar);
 
-    return MessageBubble(
+    Widget bubble = MessageBubble(
       nickname: msg.nickname,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
       avatar: AvatarWidget(avatarPath: avatarPath, name: msg.nickname, size: 36, isOfficial: !isMe && widget.friendIsOfficial),
-      onLongPress: () => _showMessageActions(msg, isMe),
+      onLongPress: _isMultiSelectMode ? null : (rect) => _showMessageActions(msg, isMe, rect),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
         userId: msg.userId,
@@ -1008,6 +1100,30 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       content: _buildBubbleContent(msg, isMe),
       statusBadge: isMe ? _buildStatusBadge(msg) : null,
     );
+
+    // 多选模式：左侧显示勾选框
+    if (_isMultiSelectMode && msg.msgType != ChatMsgType.system) {
+      final selected = msg.id != null && _selectedMsgIds.contains(msg.id);
+      bubble = GestureDetector(
+        onTap: () => _toggleMsgSelection(msg),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 4),
+              child: Icon(
+                selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: selected ? AppTheme.primaryColor : AppTheme.textHint,
+                size: 22,
+              ),
+            ),
+            Expanded(child: bubble),
+          ],
+        ),
+      );
+    }
+
+    return bubble;
   }
 
   /// 自己发出的消息：发送中显示转圈；失败显示红色感叹号（点击弹失败原因）
@@ -1079,13 +1195,199 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   /// 长按消息弹出操作菜单
-  void _showMessageActions(ChatMessageModel msg, bool isMe) {
+  void _showMessageActions(ChatMessageModel msg, bool isMe, Rect bubbleRect) {
     showMessageActions(
       context: context,
       msg: msg,
       isMe: isMe,
+      bubbleRect: bubbleRect,
       onReport: () => _reportMessage(msg),
+      onRecall: () => _recallMessage(msg),
+      onDelete: () => _deleteMessageLocally(msg),
+      onForward: () => forwardMessages(context, [msg]),
+      onMultiSelect: () => _enterMultiSelectMode(msg),
+      onQuote: () => _quoteMessage(msg),
     );
+  }
+
+  // ===== 多选模式 =====
+
+  void _enterMultiSelectMode(ChatMessageModel msg) {
+    setState(() {
+      _isMultiSelectMode = true;
+      _selectedMsgIds.clear();
+      if (msg.id != null) _selectedMsgIds.add(msg.id!);
+      _showEmojiPicker = false;
+      _showMediaPanel = false;
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  void _exitMultiSelectMode() {
+    setState(() {
+      _isMultiSelectMode = false;
+      _selectedMsgIds.clear();
+    });
+  }
+
+  void _toggleMsgSelection(ChatMessageModel msg) {
+    if (msg.id == null) return;
+    setState(() {
+      if (!_selectedMsgIds.add(msg.id!)) _selectedMsgIds.remove(msg.id!);
+    });
+  }
+
+  Future<void> _forwardSelectedMessages() async {
+    final msgs = _messages.where((m) => _selectedMsgIds.contains(m.id)).toList();
+    final ok = await forwardMessages(context, msgs);
+    if (ok && mounted) _exitMultiSelectMode();
+  }
+
+  void _deleteSelectedMessages() {
+    final l = AppLocalizations.of(context)!;
+    final count = _selectedMsgIds.length;
+    if (count == 0) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text('${l.get("batch_delete_confirm")} ($count)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l.get('cancel'))),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              for (final id in _selectedMsgIds) {
+                ChatDatabase.instance.deleteMessage('private', widget.friendId, id);
+              }
+              setState(() {
+                _messages.removeWhere((m) => _selectedMsgIds.contains(m.id));
+                _selectedMsgIds.clear();
+                _isMultiSelectMode = false;
+              });
+              Fluttertoast.showToast(msg: l.get('msg_deleted'));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerColor, foregroundColor: Colors.white),
+            child: Text(l.get('confirm')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMultiSelectToolbar(AppLocalizations l) {
+    final count = _selectedMsgIds.length;
+    return Container(
+      padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: MediaQuery.of(context).padding.bottom + 8),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextButton.icon(
+              onPressed: count > 0 ? _forwardSelectedMessages : null,
+              icon: const Icon(Icons.shortcut_rounded, size: 20),
+              label: Text(l.get('msg_forward')),
+            ),
+          ),
+          Text('$count ${l.get("multi_select_count")}', style: const TextStyle(fontSize: 13, color: AppTheme.textHint)),
+          Expanded(
+            child: TextButton.icon(
+              onPressed: count > 0 ? _deleteSelectedMessages : null,
+              icon: Icon(Icons.delete_outline, size: 20, color: count > 0 ? AppTheme.dangerColor : null),
+              label: Text(l.get('msg_delete'), style: TextStyle(color: count > 0 ? AppTheme.dangerColor : null)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===== 引用回复 =====
+
+  void _quoteMessage(ChatMessageModel msg) {
+    setState(() => _quotedMsg = msg);
+    // 聚焦输入框
+    FocusScope.of(context).requestFocus();
+  }
+
+  void _clearQuote() {
+    setState(() => _quotedMsg = null);
+  }
+
+  Widget _buildQuoteBar() {
+    final q = _quotedMsg!;
+    final preview = q.msgType == ChatMsgType.text
+        ? (q.content.length > 40 ? '${q.content.substring(0, 40)}...' : q.content)
+        : '[${q.msgTypeStr}]';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.scaffoldBg,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 3, height: 28, decoration: BoxDecoration(color: AppTheme.primaryColor, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(q.nickname, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
+                Text(preview, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _clearQuote,
+            child: const Icon(Icons.close, size: 16, color: AppTheme.textHint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 撤回消息（2分钟内自己的消息）
+  Future<void> _recallMessage(ChatMessageModel msg) async {
+    if (msg.id == null) return;
+    final l = AppLocalizations.of(context)!;
+    final success = await _chatService.recallPrivateMessage(msg.id!);
+    if (!mounted) return;
+    if (success) {
+      setState(() {
+        final idx = _messages.indexWhere((m) => m.id == msg.id);
+        if (idx >= 0) {
+          _messages[idx] = ChatMessageModel(
+            id: msg.id,
+            userId: msg.userId,
+            nickname: msg.nickname,
+            content: l.get('msg_recalled_by_me'),
+            msgType: ChatMsgType.system,
+            createdAt: msg.createdAt,
+          );
+        }
+      });
+    } else {
+      Fluttertoast.showToast(msg: l.get('msg_recall_failed'));
+    }
+  }
+
+  /// 本地删除消息（仅从界面移除）
+  void _deleteMessageLocally(ChatMessageModel msg) {
+    final l = AppLocalizations.of(context)!;
+    setState(() {
+      _messages.removeWhere((m) =>
+          (msg.id != null && m.id == msg.id) ||
+          (msg.clientMsgId != null && m.clientMsgId == msg.clientMsgId));
+    });
+    // 同时从本地数据库删除
+    if (msg.id != null) {
+      ChatDatabase.instance.deleteMessage('private', widget.friendId, msg.id!);
+    }
+    Fluttertoast.showToast(msg: l.get('msg_deleted'));
   }
 
   /// 举报消息
@@ -1152,6 +1454,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         if (redPacketId > 0) {
           _showRedPacketOpenDialog(redPacketId, msg.nickname, msg.avatar, greeting);
         }
+      },
+      onContactCardTap: (nickname, userCode, avatar) {
+        UserProfilePage.show(context, userId: 0, nickname: nickname, avatar: avatar, userCode: userCode);
       },
     );
   }

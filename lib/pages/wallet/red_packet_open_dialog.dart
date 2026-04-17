@@ -229,7 +229,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
 
     return Container(
       width: screenSize.width * 0.8,
-      height: screenSize.height * 0.7,
+      height: screenSize.height * 0.56,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(
@@ -240,7 +240,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
       ),
       child: Column(
         children: [
-          const Spacer(flex: 3),
+          const Spacer(flex: 2),
 
           // 发送者头像
           ClipRRect(
@@ -298,7 +298,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
           // "開" 按钮区域
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.only(top: 16, bottom: 40),
+            padding: const EdgeInsets.only(top: 12, bottom: 24),
             child: Center(
               child: GestureDetector(
                 onTap: _open,
@@ -364,30 +364,24 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
 
         const SizedBox(height: 32),
 
-        // 金额
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              CurrencyConfig.formatNumber(_claimedAmount),
-              style: const TextStyle(
-                fontSize: 60,
-                fontWeight: FontWeight.w300,
-                color: _goldText,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              CurrencyConfig.coinUnit,
-              style: const TextStyle(
-                fontSize: 18,
-                color: _goldText,
-              ),
-            ),
-          ],
+        // 金额（居中）
+        Text(
+          CurrencyConfig.formatNumber(_claimedAmount),
+          style: const TextStyle(
+            fontSize: 60,
+            fontWeight: FontWeight.w300,
+            color: _goldText,
+            height: 1.1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        // 爱心值
+        Text(
+          CurrencyConfig.coinUnit,
+          style: TextStyle(
+            fontSize: 15,
+            color: _goldText.withValues(alpha: 0.7),
+          ),
         ),
       ],
     );

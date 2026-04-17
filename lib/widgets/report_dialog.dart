@@ -50,9 +50,10 @@ class _ReportDialogState extends State<ReportDialog> {
       });
 
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(res['code'] == 0 ? '举报已提交' : (res['msg'] ?? '举报失败')),
           backgroundColor: res['code'] == 0 ? AppTheme.successColor : AppTheme.dangerColor,

@@ -8,7 +8,8 @@ class MessageBubble extends StatelessWidget {
   final bool isMe;
   final Widget avatar;
   final Widget content;
-  final VoidCallback? onLongPress;
+  /// 长按回调，传递气泡在屏幕上的矩形区域（用于定位弹出菜单）
+  final void Function(Rect bubbleRect)? onLongPress;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onAvatarLongPress;
 
@@ -31,7 +32,13 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onLongPress: onLongPress,
+      onLongPressStart: onLongPress != null
+          ? (_) {
+              final box = context.findRenderObject() as RenderBox;
+              final pos = box.localToGlobal(Offset.zero);
+              onLongPress!(Rect.fromLTWH(pos.dx, pos.dy, box.size.width, box.size.height));
+            }
+          : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(

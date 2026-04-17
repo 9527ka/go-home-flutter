@@ -1329,35 +1329,32 @@ class _GroupDetailPageState extends State<GroupDetailPage> {
               ),
             ),
           ),
-          // 公共聊天室（id=1）不显示退出/解散按钮
-          if (!(_group?.isPublicRoom ?? false)) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: _isOwner
-                ? ElevatedButton.icon(
-                    onPressed: _isActioning ? null : _disbandGroup,
-                    icon: const Icon(Icons.delete_forever, size: 20),
-                    label: Text(l.get('disband_group')),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.dangerColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  )
-                : OutlinedButton.icon(
-                    onPressed: _isActioning ? null : _leaveGroup,
-                    icon: const Icon(Icons.exit_to_app, size: 20),
-                    label: Text(l.get('leave_group')),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.dangerColor,
-                      side: const BorderSide(color: AppTheme.dangerColor, width: 1),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+          const SizedBox(height: 12),
+          SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: (_isOwner && !(_group?.isPublicRoom ?? false))
+              ? ElevatedButton.icon(
+                  onPressed: _isActioning ? null : _disbandGroup,
+                  icon: const Icon(Icons.delete_forever, size: 20),
+                  label: Text(l.get('disband_group')),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.dangerColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-            ),
-          ],
+                )
+              : OutlinedButton.icon(
+                  onPressed: _isActioning ? null : _leaveGroup,
+                  icon: const Icon(Icons.exit_to_app, size: 20),
+                  label: Text(l.get('leave_group')),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.dangerColor,
+                    side: const BorderSide(color: AppTheme.dangerColor, width: 1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+          ),
           const SizedBox(height: 24),
         ],
       ),

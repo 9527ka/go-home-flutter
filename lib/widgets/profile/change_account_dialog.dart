@@ -143,8 +143,9 @@ class ChangeAccountDialog {
                             setModalState(() => isSaving = false);
 
                             if (error == null) {
+                              final messenger = ScaffoldMessenger.of(context);
                               Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(l.get('account_change_success')),
                                   backgroundColor: AppTheme.successColor,

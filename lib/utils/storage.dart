@@ -137,4 +137,23 @@ class StorageUtil {
     final token = await getToken();
     return token != null && token.isNotEmpty;
   }
+
+  /// 一次性读取启动所需的认证状态（单次 getInstance，减少异步跳转）
+  static Future<({bool rememberMe, bool isLoggedIn, Map<String, dynamic>? userInfo})> loadAuthState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rememberMe = prefs.getBool(_rememberMeKey) ?? true;
+    if (!rememberMe) {
+      return (rememberMe: false, isLoggedIn: false, userInfo: null);
+    }
+    final token = prefs.getString(_tokenKey);
+    final isLoggedIn = token != null && token.isNotEmpty;
+    Map<String, dynamic>? userInfo;
+    if (isLoggedIn) {
+      final str = prefs.getString(_userInfoKey);
+      if (str != null && str.isNotEmpty) {
+        userInfo = jsonDecode(str) as Map<String, dynamic>;
+      }
+    }
+    return (rememberMe: rememberMe, isLoggedIn: isLoggedIn, userInfo: userInfo);
+  }
 }

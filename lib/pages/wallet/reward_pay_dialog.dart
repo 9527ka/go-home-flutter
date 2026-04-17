@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../config/currency.dart';
@@ -45,19 +46,15 @@ class _RewardPayDialogState extends State<RewardPayDialog> {
   Future<void> _submit() async {
     final l = AppLocalizations.of(context)!;
     if (_amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l.get('please_enter_amount')), backgroundColor: AppTheme.dangerColor),
-      );
+      Fluttertoast.showToast(msg: l.get('please_enter_amount'));
       return;
     }
-
     if (_amount > widget.maxAmount) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l.get('reward_exceed')), backgroundColor: AppTheme.dangerColor),
-      );
+      Fluttertoast.showToast(msg: l.get('reward_exceed'));
       return;
     }
 
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _isSubmitting = true);
     try {
       final res = await _walletService.rewardPay(
@@ -70,23 +67,24 @@ class _RewardPayDialogState extends State<RewardPayDialog> {
         if (res['code'] == 0) {
           context.read<WalletProvider>().refresh();
           Navigator.pop(context, true);
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(content: Text(l.get('reward_pay_success')), backgroundColor: AppTheme.successColor),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
+          Navigator.pop(context);
+          messenger.showSnackBar(
             SnackBar(content: Text(res['msg'] ?? l.get('operation_failed')), backgroundColor: AppTheme.dangerColor),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.get('network_error')), backgroundColor: AppTheme.dangerColor),
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          SnackBar(content: Text(l.get('network_error')), backgroundColor: AppTheme.dangerColor),
         );
       }
     }
-    if (mounted) setState(() => _isSubmitting = false);
   }
 
   @override

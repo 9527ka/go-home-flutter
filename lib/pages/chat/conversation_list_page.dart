@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../providers/friend_provider.dart';
+import '../../services/chat_database.dart';
 import '../../services/group_service.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/group_grid_avatar.dart';
@@ -25,9 +27,21 @@ class _ConversationListPageState extends State<ConversationListPage> {
   /// 当前打开左滑抽屉的会话 key（同一时刻仅允许一项打开，避免多项叠加）
   String? _openSwipeKey;
 
+  /// 搜索状态
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+  Timer? _searchDebounce;
+  List<MessageSearchResult> _messageResults = [];
+
   @override
   void initState() {
     super.initState();
+    _searchCtrl.addListener(() {
+      final q = _searchCtrl.text.trim().toLowerCase();
+      setState(() => _searchQuery = q);
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () => _searchLocalMessages(q));
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final conversationProvider = context.read<ConversationProvider>();
       final chatProvider = context.read<ChatProvider>();
@@ -40,7 +54,28 @@ class _ConversationListPageState extends State<ConversationListPage> {
       final friendProvider = context.read<FriendProvider>();
       friendProvider.setTranslator(AppLocalizations.of(context)!.get);
       friendProvider.loadRequests();
+      friendProvider.loadFriendsIfEmpty();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchLocalMessages(String query) async {
+    if (query.length < 2) {
+      if (_messageResults.isNotEmpty) setState(() => _messageResults = []);
+      return;
+    }
+    final db = ChatDatabase.instance;
+    if (!db.isOpen) return;
+    final results = await db.searchMessages(keyword: query, limit: 20);
+    if (mounted && _searchQuery == query) {
+      setState(() => _messageResults = results);
+    }
   }
 
   /// 通过邀请链接加入群：弹出输入框，提交后调用后端
@@ -69,7 +104,6 @@ class _ConversationListPageState extends State<ConversationListPage> {
         ],
       ),
     );
-    ctrl.dispose();
     if (input == null || input.isEmpty || !mounted) return;
 
     // 解析 token：支持完整 gohome://group/invite/<token> 或纯 token
@@ -196,31 +230,264 @@ class _ConversationListPageState extends State<ConversationListPage> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await conversationProvider.loadConversations();
-          await chatProvider.checkUnread();
-          await friendProvider.loadRequests();
-        },
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          children: [
-            // 顶部"新的朋友"入口（有待处理申请时显示）
-            if (friendProvider.hasNewRequests)
-              _buildFriendRequestsEntry(friendProvider, l),
-            // 私聊和群聊会话列表
-            if (conversationProvider.isLoading && conversationProvider.conversations.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 60),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else
-              ...conversationProvider.conversations.map(
-                (conv) => _buildDismissibleConversation(conv, l),
+      body: Column(
+        children: [
+          // 搜索栏
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: l.get('search_chat_hint'),
+                hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textHint),
+                prefixIcon: const Icon(Icons.search, size: 20, color: AppTheme.textHint),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () { _searchCtrl.clear(); FocusScope.of(context).unfocus(); },
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppTheme.cardBg,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
               ),
-          ],
-        ),
+            ),
+          ),
+          Expanded(
+            child: _searchQuery.isNotEmpty
+                ? _buildSearchResults(l, conversationProvider, friendProvider)
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      await conversationProvider.loadConversations();
+                      await chatProvider.checkUnread();
+                      await friendProvider.loadRequests();
+                    },
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      children: [
+                        if (friendProvider.hasNewRequests)
+                          _buildFriendRequestsEntry(friendProvider, l),
+                        if (conversationProvider.isLoading && conversationProvider.conversations.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 60),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else
+                          ...conversationProvider.conversations.map(
+                            (conv) => _buildDismissibleConversation(conv, l),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       ),
+    );
+  }
+
+  // ============================================================
+  //  搜索结果（好友 + 群聊 + 会话）
+  // ============================================================
+
+  Widget _buildSearchResults(AppLocalizations l, ConversationProvider convProvider, FriendProvider fp) {
+    final q = _searchQuery;
+    // 搜索会话（按名称和最后消息）
+    final matchedConvs = convProvider.conversations.where((c) =>
+        c.name.toLowerCase().contains(q) ||
+        c.lastMessage.toLowerCase().contains(q)
+    ).take(10).toList();
+    // 已有会话的好友 ID，避免重复显示
+    final convFriendIds = matchedConvs
+        .where((c) => c.isPrivate)
+        .map((c) => c.targetId)
+        .toSet();
+    // 搜索好友（排除已在会话结果中出现的）
+    final matchedFriends = fp.friends.where((f) =>
+        !convFriendIds.contains(f.userId) &&
+        (f.displayName.toLowerCase().contains(q) ||
+         f.userCode.toLowerCase().contains(q))
+    ).take(10).toList();
+
+    final hasAny = matchedFriends.isNotEmpty || matchedConvs.isNotEmpty || _messageResults.isNotEmpty;
+    if (!hasAny) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 60),
+          child: Text(l.get('no_results'), style: const TextStyle(color: AppTheme.textHint)),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      children: [
+        // 好友结果
+        if (matchedFriends.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
+            child: Text(l.get('search_friends'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+          ),
+          ...matchedFriends.map((f) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: GestureDetector(
+              onTap: () {
+                _searchCtrl.clear();
+                FocusScope.of(context).unfocus();
+                Navigator.pushNamed(context, AppRoutes.privateChat, arguments: {
+                  'friendId': f.userId,
+                  'friendName': f.displayName,
+                  'friendAvatar': f.avatar,
+                  'friendIsOfficial': f.isOfficialService,
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    AvatarWidget(avatarPath: f.avatar, name: f.displayName, size: 40),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(f.displayName, style: const TextStyle(fontSize: 15)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )),
+        ],
+        // 会话结果（包含群聊）
+        if (matchedConvs.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4, left: 4),
+            child: Text(l.get('search_messages'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+          ),
+          ...matchedConvs.map((conv) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: GestureDetector(
+              onTap: () {
+                _searchCtrl.clear();
+                FocusScope.of(context).unfocus();
+                if (conv.isGroup) {
+                  Navigator.pushNamed(context, AppRoutes.groupChat, arguments: conv.targetId);
+                } else {
+                  Navigator.pushNamed(context, AppRoutes.privateChat, arguments: {
+                    'friendId': conv.targetId,
+                    'friendName': conv.name,
+                    'friendAvatar': conv.avatar,
+                    'friendIsOfficial': conv.isOfficialService,
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    conv.isGroup && conv.memberAvatars.isNotEmpty
+                        ? GroupGridAvatar(avatars: conv.memberAvatars, names: conv.memberNames, size: 40)
+                        : AvatarWidget(avatarPath: conv.avatar, name: conv.name, size: 40),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(conv.name, style: const TextStyle(fontSize: 15)),
+                          if (conv.lastMessage.isNotEmpty && conv.lastMessage.toLowerCase().contains(q))
+                            Text(
+                              conv.lastMessage,
+                              style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )),
+        ],
+        // 本地聊天记录搜索结果
+        if (_messageResults.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4, left: 4),
+            child: Text(l.get('search_chat_records'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+          ),
+          ..._messageResults.map((result) {
+            // 从会话列表解析名称
+            final conv = convProvider.conversations.cast<ConversationModel?>().firstWhere(
+              (c) => c!.targetType == result.chatType && c.targetId == result.chatId,
+              orElse: () => null,
+            );
+            final name = conv?.name ?? (result.chatType == 'private' ? 'ID:${result.chatId}' : '${l.get('groups')} ${result.chatId}');
+            final avatar = conv?.avatar ?? '';
+            final preview = result.messages.isNotEmpty ? result.messages.first.content : '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: GestureDetector(
+                onTap: () {
+                  _searchCtrl.clear();
+                  FocusScope.of(context).unfocus();
+                  if (result.chatType == 'group') {
+                    Navigator.pushNamed(context, AppRoutes.groupChat, arguments: result.chatId);
+                  } else {
+                    Navigator.pushNamed(context, AppRoutes.privateChat, arguments: {
+                      'friendId': result.chatId,
+                      'friendName': name,
+                      'friendAvatar': avatar,
+                    });
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      AvatarWidget(avatarPath: avatar, name: name, size: 40),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(child: Text(name, style: const TextStyle(fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                Text('${result.matchCount}${l.get('search_n_matches')}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textHint)),
+                              ],
+                            ),
+                            if (preview.isNotEmpty)
+                              Text(preview, style: const TextStyle(fontSize: 12, color: AppTheme.textHint),
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
     );
   }
 

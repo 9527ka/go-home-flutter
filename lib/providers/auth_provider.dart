@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
-import '../services/iap_service.dart';
+import '../services/chat_database.dart';
 import '../services/push_service.dart';
 import '../utils/storage.dart';
 
@@ -18,28 +18,25 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn;
   bool get initialized => _initialized;
 
-  /// 初始化：检查本地登录状态
+  /// 初始化：检查本地登录状态（单次 SharedPreferences 读取，减少启动延迟）
   Future<void> init() async {
-    final rememberMe = await StorageUtil.getRememberMe();
-    if (!rememberMe) {
-      // 未勾选"记住我"，清除登录状态
-      await StorageUtil.clearToken();
-      await StorageUtil.clearUserInfo();
+    final auth = await StorageUtil.loadAuthState();
+
+    if (!auth.rememberMe) {
+      // 未勾选"记住我"，清除登录状态（并行写入）
+      await Future.wait([StorageUtil.clearToken(), StorageUtil.clearUserInfo()]);
       _isLoggedIn = false;
       _initialized = true;
       notifyListeners();
       return;
     }
 
-    _isLoggedIn = await StorageUtil.isLoggedIn();
-    if (_isLoggedIn) {
-      final info = await StorageUtil.getUserInfo();
-      if (info != null) {
-        _user = UserModel.fromJson(info);
-      }
-      // 登录态恢复后初始化 IAP（需要 token 用于收据验证）
-      IapService.instance.initialize();
-      // 注册推送通知
+    _isLoggedIn = auth.isLoggedIn;
+    if (_isLoggedIn && auth.userInfo != null) {
+      _user = UserModel.fromJson(auth.userInfo!);
+      // 以下均为 fire-and-forget，不阻塞启动
+      ChatDatabase.instance.init(_user!.id);
+      // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
       PushService.instance.requestPermission();
     }
     _initialized = true;
@@ -63,7 +60,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        IapService.instance.initialize();
+        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
         PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
@@ -94,7 +92,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        IapService.instance.initialize();
+        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
         PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
@@ -131,7 +130,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        IapService.instance.initialize();
+        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
         PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
@@ -159,7 +159,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        IapService.instance.initialize();
+        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
         PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功

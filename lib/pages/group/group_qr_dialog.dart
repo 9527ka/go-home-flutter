@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../config/theme.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/group_service.dart';
+import '../../widgets/chat/chat_picker_page.dart';
 
 /// 群二维码 + 邀请链接对话框
 ///
@@ -67,9 +69,30 @@ class _GroupQrDialogState extends State<GroupQrDialog> {
   Future<void> _shareLink() async {
     if (_inviteUrl == null) return;
     final l = AppLocalizations.of(context)!;
-    await Share.share(
-      '${l.get('group_invite_share_text').replaceAll('{name}', widget.groupName)}\n${_inviteUrl!}',
+    final shareText = '${l.get('group_invite_share_text').replaceAll('{name}', widget.groupName)}\n${_inviteUrl!}';
+    // 在 push 前捕获 ChatProvider，避免 Dialog context 脱离 Provider 树
+    final chatProvider = context.read<ChatProvider>();
+
+    // 先关闭对话框，再打开选择页面（避免 Dialog context 下 push 全屏页面的问题）
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.pop(); // 关闭二维码对话框
+
+    final result = await nav.push<Map<String, dynamic>>(
+      MaterialPageRoute(builder: (_) => ChatPickerPage(title: l.get('share_to_chat'))),
     );
+    if (result == null) return;
+
+    final targetType = result['targetType'] as String;
+    final targetId = result['targetId'] as int;
+    final targetName = result['name'] as String;
+
+    if (targetType == 'private') {
+      chatProvider.sendPrivateMessage(targetId, shareText);
+    } else {
+      chatProvider.sendGroupMessage(targetId, shareText);
+    }
+
+    Fluttertoast.showToast(msg: '${l.get('send_to')} $targetName');
   }
 
   String _formatExpire(String? raw) {

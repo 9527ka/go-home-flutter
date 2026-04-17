@@ -2,7 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/routes.dart';
 import 'config/theme.dart';
@@ -18,24 +18,21 @@ import 'providers/app_config_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/sign_provider.dart';
 import 'providers/interaction_provider.dart';
-import 'services/call_signaling_service.dart';
+// import 'services/call_signaling_service.dart'; // 语音通话暂时关闭
 import 'services/http_client.dart';
 import 'services/push_service.dart';
 import 'utils/in_app_notifier.dart';
 import 'l10n/app_localizations.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 强制 iOS 使用 StoreKit 1，让 IAP 收据为传统 base64（/verifyReceipt 可识别）。
-  // 必须在任何 InAppPurchase.instance 访问之前、runApp 之前调用。
-  // 注：plugin 已标记 deprecated，长期应改为服务端验证 StoreKit 2 JWS。
-  if (Platform.isIOS) {
-    // ignore: deprecated_member_use
-    await InAppPurchaseStoreKitPlatform.enableStoreKit1();
-  }
-
+  // fire-and-forget 预热 SharedPreferences（不阻塞 runApp，provider 内首次 await 秒返回）
+  SharedPreferences.getInstance();
   PushService.instance.init();
+
+  // StoreKit1 配置延迟到 IapService 首次使用时执行（避免启动时加载 StoreKit 框架）
+
   runApp(const GoHomeApp());
 }
 
@@ -58,14 +55,14 @@ class GoHomeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => SignProvider()),
         ChangeNotifierProvider(create: (_) => InteractionProvider()),
-        // 通话信令服务 —— 自动挂到 ChatProvider 的 WS，通话页用 Consumer 订阅
-        ChangeNotifierProxyProvider<ChatProvider, CallSignalingService>(
-          create: (_) => CallSignalingService.instance,
-          update: (_, chat, call) {
-            call!.attach(chat);
-            return call;
-          },
-        ),
+        // 语音通话暂时关闭
+        // ChangeNotifierProxyProvider<ChatProvider, CallSignalingService>(
+        //   create: (_) => CallSignalingService.instance,
+        //   update: (_, chat, call) {
+        //     call!.attach(chat);
+        //     return call;
+        //   },
+        // ),
       ],
       child: Consumer<LocaleProvider>(
         builder: (context, localeProvider, _) {

@@ -10,6 +10,7 @@ import '../providers/conversation_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/interaction_provider.dart';
 import '../providers/notification_provider.dart';
+import '../services/chat_database.dart';
 
 /// 切换账号/登出时的会话级数据清理。
 ///
@@ -39,6 +40,9 @@ Future<void> performLogout(
   // 清除进程内聊天消息缓存（私聊 + 群聊），防止新账号看到旧账号的消息
   PrivateChatPage.invalidateAllCaches();
   GroupChatPage.invalidateAllCaches();
+
+  // 关闭当前用户的本地聊天数据库
+  await ChatDatabase.instance.close();
 
   // 2. 清 per-conversation 本地 prefs（免打扰 / 置顶 / 清空聊天时间戳等）
   await _clearSessionPreferences();

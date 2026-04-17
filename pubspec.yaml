@@ -91,15 +91,15 @@ dependencies:
   # SVG 图标渲染
   flutter_svg: ^2.0.10
 
-  # 腾讯云 TRTC / RTC Engine（私聊语音通话）
-  # tencent_trtc_cloud 已废弃（native SDK v10.7 过旧），改用新 SDK
-  tencent_rtc_sdk: ^13.2.1
-
-  # 通话振动
-  vibration: ^2.0.0
+  # 腾讯云 TRTC / RTC Engine（私聊语音通话）— 暂时关闭
+  # tencent_rtc_sdk: ^13.2.1
+  # vibration: ^2.0.0
 
   # UUID（通话 call_id 生成）
   uuid: ^4.3.0
+  mobile_scanner: ^7.2.0
+  sqflite: ^2.4.2
+  path: ^1.9.1
 
 dependency_overrides:
   # 修复 objective_c 9.3.0 在模拟器上 native assets 加载失败的问题

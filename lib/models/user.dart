@@ -9,6 +9,8 @@ class UserModel {
   final int status;
   final int authProvider; // 1=密码登录 2=Apple登录
   final int userType; // 0=普通用户 1=官方客服
+  final int gender; // 0=未设置 1=男 2=女
+  final String signature; // 个性签名
 
   UserModel({
     required this.id,
@@ -21,6 +23,8 @@ class UserModel {
     this.status = 1,
     this.authProvider = 1,
     this.userType = 0,
+    this.gender = 0,
+    this.signature = '',
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +39,8 @@ class UserModel {
       status: json['status'] ?? 1,
       authProvider: json['auth_provider'] ?? 1,
       userType: json['user_type'] ?? 0,
+      gender: json['gender'] ?? 0,
+      signature: json['signature'] ?? '',
     );
   }
 
@@ -55,6 +61,8 @@ class UserModel {
       'status': status,
       'auth_provider': authProvider,
       'user_type': userType,
+      'gender': gender,
+      'signature': signature,
     };
   }
 }

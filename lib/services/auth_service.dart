@@ -132,11 +132,15 @@ class AuthService {
     String? nickname,
     String? avatar,
     String? contactPhone,
+    int? gender,
+    String? signature,
   }) async {
     final data = <String, dynamic>{};
     if (nickname != null) data['nickname'] = nickname;
     if (avatar != null) data['avatar'] = avatar;
     if (contactPhone != null) data['contact_phone'] = contactPhone;
+    if (gender != null) data['gender'] = gender;
+    if (signature != null) data['signature'] = signature;
 
     return await _http.post(ApiConfig.updateProfile, data: data);
   }

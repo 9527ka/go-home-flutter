@@ -18,7 +18,7 @@ import UserNotifications
 
     if let flutterVC = self.window?.rootViewController as? FlutterViewController {
       flutterVC.view.backgroundColor = UIColor(
-        red: 0.357, green: 0.627, blue: 0.910, alpha: 1.0  // #5BA0E8
+        red: 0.290, green: 0.565, blue: 0.851, alpha: 1.0  // #4A90D9 与 LaunchScreen 一致
       )
 
       // 消息提示音 & 本地通知 MethodChannel

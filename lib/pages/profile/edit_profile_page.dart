@@ -22,6 +22,7 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final _nicknameCtrl = TextEditingController();
+  final _signatureCtrl = TextEditingController();
   final _uploadService = UploadService();
   final _authService = AuthService();
   final _picker = ImagePicker();
@@ -30,6 +31,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   String? _localAvatarPath;
   bool _isSaving = false;
   bool _isUploading = false;
+  int _gender = 0; // 0=未设置 1=男 2=女
 
   @override
   void initState() {
@@ -38,12 +40,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
     if (user != null) {
       _nicknameCtrl.text = user.nickname;
       _avatarUrl = user.avatar.isNotEmpty ? user.avatar : null;
+      _gender = user.gender;
+      _signatureCtrl.text = user.signature;
     }
   }
 
   @override
   void dispose() {
     _nicknameCtrl.dispose();
+    _signatureCtrl.dispose();
     super.dispose();
   }
 
@@ -159,6 +164,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final res = await _authService.updateProfile(
         nickname: nickname,
         avatar: _avatarUrl,
+        gender: _gender,
+        signature: _signatureCtrl.text.trim(),
       );
 
       if (!mounted) return;
@@ -310,6 +317,85 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
 
+            const SizedBox(height: 16),
+
+            // ===== Gender =====
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.cardBg,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppTheme.cardShadow,
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l.get('gender'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildGenderChip(0, l.get('gender_unknown'), Icons.help_outline),
+                      const SizedBox(width: 8),
+                      _buildGenderChip(1, l.get('gender_male'), Icons.male),
+                      const SizedBox(width: 8),
+                      _buildGenderChip(2, l.get('gender_female'), Icons.female),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ===== Signature =====
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.cardBg,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppTheme.cardShadow,
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l.get('signature'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _signatureCtrl,
+                    maxLength: 100,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: l.get('signature_empty'),
+                      counterText: '',
+                      prefixIcon: const Icon(Icons.edit_note, size: 20),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppTheme.dividerColor),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppTheme.dividerColor),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             const SizedBox(height: 36),
 
             // ===== Save button =====
@@ -423,6 +509,37 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             )
           : null,
+    );
+  }
+
+  Widget _buildGenderChip(int value, String label, IconData icon) {
+    final selected = _gender == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _gender = value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primaryColor.withValues(alpha: 0.1) : AppTheme.scaffoldBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? AppTheme.primaryColor : AppTheme.dividerColor,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: selected ? AppTheme.primaryColor : AppTheme.textSecondary),
+              const SizedBox(width: 4),
+              Text(label, style: TextStyle(
+                fontSize: 14,
+                color: selected ? AppTheme.primaryColor : AppTheme.textSecondary,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              )),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

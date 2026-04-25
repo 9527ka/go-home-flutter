@@ -234,6 +234,30 @@ class _WalletPageState extends State<WalletPage> {
               ),
             ),
           ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: _actionButton(
+              icon: Icons.casino_outlined,
+              label: '心愿转盘',
+              color: AppTheme.accentColor,
+              onTap: () =>
+                  Navigator.pushNamed(context, AppRoutes.lottery).then((_) {
+                context.read<WalletProvider>().refresh();
+              }),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _actionButton(
+              icon: Icons.workspace_premium_outlined,
+              label: 'VIP',
+              color: AppTheme.warningColor,
+              onTap: () =>
+                  Navigator.pushNamed(context, AppRoutes.vipCenter).then((_) {
+                context.read<WalletProvider>().refresh();
+              }),
+            ),
+          ),
         ],
       ),
     );

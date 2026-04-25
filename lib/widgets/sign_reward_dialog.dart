@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../config/currency.dart';
 import '../config/theme.dart';
@@ -10,8 +11,8 @@ import 'sign/critical_flash_overlay.dart';
 ///
 /// 演出编排：
 /// 1) 弹窗弹性入场（elastic scale + fade）
-/// 2) 金币原地发散（暴击时数量更多）
-/// 3) 若暴击 → 覆盖红色爆闪 + "暴击 ×N！" 文字
+/// 2) 金币原地发散（按 bonusRate 分级数量/半径）
+/// 3) 暴击 → 覆盖爆闪 + "暴击 ×N！" + 卡片震屏（按 rate 分级强度）
 class SignRewardDialog extends StatefulWidget {
   final SignResultModel result;
 
@@ -22,10 +23,13 @@ class SignRewardDialog extends StatefulWidget {
 }
 
 class _SignRewardDialogState extends State<SignRewardDialog>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+
+  // 震屏控制器：按 bonusRate 分级强度，暴击启动时 forward 一次
+  late AnimationController _shakeCtrl;
 
   /// 触发后才渲染，避免一入场就立刻爆
   bool _showCoinBurst = false;
@@ -48,20 +52,100 @@ class _SignRewardDialogState extends State<SignRewardDialog>
     );
     _controller.forward();
 
-    // 入场完成后启动金币发散；暴击时同步启动红闪
+    _shakeCtrl = AnimationController(
+      // 震屏时长随 rate 递增；非暴击不启动
+      duration: _shakeDurationForRate(widget.result.bonusRate),
+      vsync: this,
+    );
+
+    // 入场完成后启动金币发散；暴击时同步启动红闪 + 震屏
     Future.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
       setState(() {
         _showCoinBurst = true;
         _showCritical = widget.result.isBonus;
       });
+      if (widget.result.isBonus) {
+        _shakeCtrl.forward(from: 0);
+      }
     });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _shakeCtrl.dispose();
     super.dispose();
+  }
+
+  /// 按 bonusRate 返回粒子数量
+  int _coinCountForRate(int rate) {
+    if (rate >= 20) return 40;
+    if (rate >= 10) return 30;
+    if (rate >= 5)  return 22;
+    if (rate >= 2)  return 14;
+    return 10;
+  }
+
+  /// 按 bonusRate 返回发散半径
+  double _coinRadiusForRate(int rate) {
+    if (rate >= 20) return 260;
+    if (rate >= 10) return 220;
+    if (rate >= 5)  return 180;
+    if (rate >= 2)  return 140;
+    return 120;
+  }
+
+  /// 按 bonusRate 返回金币尺寸
+  double _coinSizeForRate(int rate) {
+    if (rate >= 20) return 38;
+    if (rate >= 10) return 34;
+    if (rate >= 5)  return 30;
+    if (rate >= 2)  return 26;
+    return 24;
+  }
+
+  /// 按 bonusRate 返回震屏幅度（像素）
+  double _shakeIntensityForRate(int rate) {
+    if (rate >= 20) return 18;
+    if (rate >= 10) return 12;
+    if (rate >= 5)  return 8;
+    if (rate >= 2)  return 4;
+    return 0;
+  }
+
+  /// 按 bonusRate 返回震屏时长
+  Duration _shakeDurationForRate(int rate) {
+    if (rate >= 20) return const Duration(milliseconds: 900);
+    if (rate >= 10) return const Duration(milliseconds: 700);
+    if (rate >= 5)  return const Duration(milliseconds: 500);
+    if (rate >= 2)  return const Duration(milliseconds: 350);
+    return const Duration(milliseconds: 1); // 占位
+  }
+
+  /// 按 bonusRate 返回爆闪色
+  Color _flashColorForRate(int rate) {
+    if (rate >= 20) return const Color(0xFFAA00FF); // 紫（至尊暴击）
+    if (rate >= 10) return const Color(0xFFFFB300); // 金
+    if (rate >= 5)  return const Color(0xFFE74C3C); // 红
+    if (rate >= 2)  return const Color(0xFFFF9500); // 橙
+    return const Color(0xFFE74C3C);
+  }
+
+  /// 计算当前震屏偏移：渐弱正弦
+  Offset _currentShakeOffset() {
+    final rate = widget.result.bonusRate;
+    final intensity = _shakeIntensityForRate(rate);
+    if (intensity == 0) return Offset.zero;
+    final t = _shakeCtrl.value;
+    if (t <= 0 || t >= 1) return Offset.zero;
+    final decay = 1 - t;
+    // 高 rate 加一层垂直抖动
+    final dx = math.sin(t * math.pi * 18) * intensity * decay;
+    final dy = rate >= 10
+        ? math.cos(t * math.pi * 22) * intensity * 0.6 * decay
+        : 0.0;
+    return Offset(dx, dy);
   }
 
   @override
@@ -69,6 +153,7 @@ class _SignRewardDialogState extends State<SignRewardDialog>
     final result = widget.result;
     final isBonus = result.isBonus;
     final l = AppLocalizations.of(context)!;
+    final rate = result.bonusRate;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -76,23 +161,32 @@ class _SignRewardDialogState extends State<SignRewardDialog>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 主卡片
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: _buildCard(result, isBonus, l),
+          // 主卡片（带震屏）
+          AnimatedBuilder(
+            animation: _shakeCtrl,
+            builder: (_, child) {
+              return Transform.translate(
+                offset: _currentShakeOffset(),
+                child: child,
+              );
+            },
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: ScaleTransition(
+                scale: _scaleAnimation,
+                child: _buildCard(result, isBonus, l),
+              ),
             ),
           ),
 
-          // 金币发散（原地，位于弹窗中心层）
+          // 金币发散（按 rate 分级）
           if (_showCoinBurst)
             Positioned.fill(
               child: IgnorePointer(
                 child: CoinBurstAnimation(
-                  coinCount: isBonus ? 22 : 10,
-                  radius: isBonus ? 180 : 120,
-                  coinSize: isBonus ? 32 : 24,
+                  coinCount: _coinCountForRate(rate),
+                  radius: _coinRadiusForRate(rate),
+                  coinSize: _coinSizeForRate(rate),
                   onComplete: () {
                     if (mounted) setState(() => _showCoinBurst = false);
                   },
@@ -104,7 +198,8 @@ class _SignRewardDialogState extends State<SignRewardDialog>
           if (_showCritical)
             Positioned.fill(
               child: CriticalFlashOverlay(
-                multiplier: result.bonusRate,
+                multiplier: rate,
+                flashColor: _flashColorForRate(rate),
                 onComplete: () {
                   if (mounted) setState(() => _showCritical = false);
                 },

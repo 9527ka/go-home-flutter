@@ -27,6 +27,34 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_ios_podfile_setup
 
+# ============================================================================
+# 修复 "Multiple commands produce ... Assets.car" 冲突
+#
+# tuikit_atomic_x 4.0.2 podspec 用旧式 `s.resources = 'Assets/**/*'`，把
+# Assets/videorecorder.xcassets 扁平塞进 Runner Copy Bundle Resources，
+# 和 Runner/Assets.xcassets 同产 Assets.car，Xcode 报重复生产错误。
+#
+# 本项目（TUICallKit）只用 1v1 语音通话，不用 videorecorder 美颜/滤镜 UI，
+# 从 resources 里剔除该 xcassets 即可。
+#
+# 关键点：CocoaPods 1.16.x 的执行顺序是
+#   generate_pods_project → run_podfile_post_install_hooks → integrate_user_project
+# 其中 integrate_user_project 会**再次**改写 Pods-Runner-resources.sh /
+# 各 xcfilelist，把我们在 post_install 里做的清理覆盖回去。
+# 因此必须在 pre_install 阶段、spec 进入安装流程前就改掉 resources。
+# ============================================================================
+pre_install do |installer|
+  installer.pod_targets.each do |pod_target|
+    next unless pod_target.name == 'tuikit_atomic_x'
+    pod_target.specs.each do |spec|
+      next unless spec.attributes_hash['resources']
+      # 只保留 .bundle（字幕资源），丢掉 videorecorder.xcassets
+      spec.attributes_hash['resources'] = 'Assets/**/*.bundle'
+      Pod::UI.puts "[Podfile pre_install] #{spec.name}: resources → Assets/**/*.bundle (excluding xcassets)"
+    end
+  end
+end
+
 target 'Runner' do
   use_frameworks! :linkage => :static
 
@@ -40,4 +68,5 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
   end
+
 end

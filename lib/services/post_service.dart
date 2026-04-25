@@ -96,6 +96,43 @@ class PostService {
     return PageData(list: [], page: 1, pageSize: 20, total: 0);
   }
 
+  /// 附近启事
+  /// [radiusKm] 查询半径公里，可选 10/50/100/200
+  /// [lat]/[lng] 为空时后端使用用户上次上报位置
+  Future<PageData<PostModel>> getNearby({
+    double? lat,
+    double? lng,
+    double radiusKm = 50,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final params = <String, dynamic>{
+      'radius': radiusKm,
+      'page': page,
+      'page_size': pageSize,
+    };
+    if (lat != null) params['lat'] = lat;
+    if (lng != null) params['lng'] = lng;
+
+    final res = await _http.get(ApiConfig.postNearby, params: params);
+    if (res['code'] == 0 && res['data'] != null) {
+      return PageData.fromJson(
+        res['data'],
+        (json) => PostModel.fromJson(json),
+      );
+    }
+    return PageData(list: [], page: 1, pageSize: 20, total: 0);
+  }
+
+  /// 上报当前用户 GPS 位置
+  Future<bool> updateLocation(double lat, double lng) async {
+    final res = await _http.post(ApiConfig.userLocation, data: {
+      'lat': lat,
+      'lng': lng,
+    });
+    return res['code'] == 0;
+  }
+
   /// 编辑启事（仅待审核/被驳回状态可编辑）
   Future<Map<String, dynamic>> update({
     required int id,

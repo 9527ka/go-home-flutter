@@ -1,4 +1,3 @@
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -18,7 +17,7 @@ import 'providers/app_config_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/sign_provider.dart';
 import 'providers/interaction_provider.dart';
-// import 'services/call_signaling_service.dart'; // 语音通话暂时关闭
+import 'services/call_service.dart';
 import 'services/http_client.dart';
 import 'services/push_service.dart';
 import 'utils/in_app_notifier.dart';
@@ -55,14 +54,6 @@ class GoHomeApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => SignProvider()),
         ChangeNotifierProvider(create: (_) => InteractionProvider()),
-        // 语音通话暂时关闭
-        // ChangeNotifierProxyProvider<ChatProvider, CallSignalingService>(
-        //   create: (_) => CallSignalingService.instance,
-        //   update: (_, chat, call) {
-        //     call!.attach(chat);
-        //     return call;
-        //   },
-        // ),
       ],
       child: Consumer<LocaleProvider>(
         builder: (context, localeProvider, _) {
@@ -76,12 +67,16 @@ class GoHomeApp extends StatelessWidget {
             // 绑定全局 ScaffoldMessenger Key（应用内消息横幅兜底，无需 context）
             scaffoldMessengerKey: InAppNotifier.scaffoldMessengerKey,
 
-            // 多语言
-            localizationsDelegates: const [
-              _AppLocalizationsDelegate(),
+            // TUICallKit 需要监听路由以 push 来电/通话页（web stub 为空列表）
+            navigatorObservers: CallService.instance.navigatorObservers,
+
+            // 多语言（追加 TUICallKit 内置 AtomicLocalizations 以覆盖通话界面文案）
+            localizationsDelegates: [
+              const _AppLocalizationsDelegate(),
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
+              ...CallService.instance.localizationsDelegates,
             ],
             supportedLocales: AppLocalizations.supportedLocales,
             locale: localeProvider.locale,
@@ -90,6 +85,7 @@ class GoHomeApp extends StatelessWidget {
             initialRoute: AppRoutes.splash,
             routes: AppRoutes.routes,
             onGenerateRoute: AppRoutes.onGenerateRoute,
+            onGenerateInitialRoutes: AppRoutes.onGenerateInitialRoutes,
           );
         },
       ),

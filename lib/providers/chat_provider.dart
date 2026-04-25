@@ -254,7 +254,7 @@ class ChatProvider extends ChangeNotifier with WidgetsBindingObserver {
     _handler.removeHandler(type, handler);
   }
 
-  /// 发送任意自定义 WS 指令（如通话信令 call_signal）
+  /// 发送任意自定义 WS 指令（扩展占位）
   void sendRaw(Map<String, dynamic> data) => _ws.send(data);
 
   // ===== 发送消息（委托给 ChatMessageSender） =====

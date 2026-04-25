@@ -1,3 +1,5 @@
+import 'vip.dart';
+
 /// 好友模型
 class FriendModel {
   final int id; // 好友关系 ID
@@ -9,6 +11,7 @@ class FriendModel {
   final String remark; // 好友备注
   final String createdAt;
   final int userType; // 0=普通用户 1=官方客服
+  final VipBadgeModel? vip;
 
   FriendModel({
     required this.id,
@@ -20,6 +23,7 @@ class FriendModel {
     this.remark = '',
     this.createdAt = '',
     this.userType = 0,
+    this.vip,
   });
 
   factory FriendModel.fromJson(Map<String, dynamic> json) {
@@ -36,6 +40,9 @@ class FriendModel {
       remark: json['remark'] ?? '',
       createdAt: json['created_at'] ?? '',
       userType: json['user_type'] ?? user?['user_type'] ?? friend?['user_type'] ?? 0,
+      vip: VipBadgeModel.tryParse(json['vip'])
+          ?? VipBadgeModel.tryParse(user?['vip'])
+          ?? VipBadgeModel.tryParse(friend?['vip']),
     );
   }
 

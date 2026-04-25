@@ -1,3 +1,5 @@
+import 'vip.dart';
+
 /// 会话模型 — 私聊或群聊会话列表项
 class ConversationModel {
   final int targetId; // friend_id 或 group_id
@@ -11,6 +13,7 @@ class ConversationModel {
   final int userType; // 0=普通用户 1=官方客服
   final List<String> memberAvatars; // 群成员头像（用于九宫格头像）
   final List<String> memberNames; // 群成员名称（用于字母占位）
+  final VipBadgeModel? targetVip; // 私聊会话对方 VIP
 
   ConversationModel({
     required this.targetId,
@@ -24,6 +27,7 @@ class ConversationModel {
     this.userType = 0,
     this.memberAvatars = const [],
     this.memberNames = const [],
+    this.targetVip,
   });
 
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
@@ -41,6 +45,7 @@ class ConversationModel {
       userType: json['user_type'] ?? 0,
       memberAvatars: rawAvatars?.map((e) => '$e').toList() ?? const [],
       memberNames: rawNames?.map((e) => '$e').toList() ?? const [],
+      targetVip: VipBadgeModel.tryParse(json['target_vip']),
     );
   }
 

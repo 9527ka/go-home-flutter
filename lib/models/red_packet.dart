@@ -25,6 +25,13 @@ class RedPacketModel {
   final UserModel? user;
   final List<RedPacketClaimModel> claims;
 
+  /// 发送时快照的 VIP 等级 key（normal/silver/gold/platinum/diamond/supreme）
+  final String senderVipLevel;
+  /// 服务端据 senderVipLevel join vip_levels 返回的皮肤图（可空）
+  final String senderSkinUrl;
+  /// 服务端据 senderVipLevel join vip_levels 返回的动效 key（none/silver_skin/...）
+  final String senderEffectKey;
+
   // 详情接口附加字段
   final RedPacketClaimModel? myClaim;
   final int? bestUserId;
@@ -44,6 +51,9 @@ class RedPacketModel {
     this.createdAt = '',
     this.user,
     this.claims = const [],
+    this.senderVipLevel = 'normal',
+    this.senderSkinUrl = '',
+    this.senderEffectKey = 'none',
     this.myClaim,
     this.bestUserId,
   });
@@ -71,12 +81,18 @@ class RedPacketModel {
       createdAt: json['created_at'] ?? '',
       user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
       claims: claimList,
+      senderVipLevel: json['sender_vip_level'] ?? 'normal',
+      senderSkinUrl: json['sender_skin_url'] ?? '',
+      senderEffectKey: json['sender_effect_key'] ?? 'none',
       myClaim: json['my_claim'] != null
           ? RedPacketClaimModel.fromJson(json['my_claim'])
           : null,
       bestUserId: json['best_user_id'],
     );
   }
+
+  /// 是否为 VIP 专属皮肤红包（用于 UI 判断是否上特效）
+  bool get hasVipSkin => senderVipLevel != 'normal' && senderEffectKey != 'none';
 
   bool get isActive => status == 1;
   bool get isFinished => status == 2;

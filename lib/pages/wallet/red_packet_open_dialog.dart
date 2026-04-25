@@ -4,6 +4,8 @@ import '../../config/currency.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
+import '../../widgets/red_packet_effect.dart';
+import '../../widgets/red_packet_open_burst.dart';
 
 /// 微信风格红包开启弹窗
 /// 返回值: {'claimed': true, 'amount': double} 或 {'claimed': false} 或 null
@@ -19,6 +21,10 @@ class RedPacketOpenDialog extends StatefulWidget {
   /// 已领取金额（alreadyClaimed=true 时使用）
   final double claimedAmount;
 
+  /// VIP 红包皮肤动效 key（取自 RedPacketModel.senderEffectKey）
+  /// none/silver_skin/gold_skin/platinum_skin/diamond_skin/supreme_skin
+  final String senderEffectKey;
+
   const RedPacketOpenDialog({
     super.key,
     required this.redPacketId,
@@ -27,6 +33,7 @@ class RedPacketOpenDialog extends StatefulWidget {
     this.greeting = '',
     this.alreadyClaimed = false,
     this.claimedAmount = 0,
+    this.senderEffectKey = 'none',
   });
 
   @override
@@ -34,9 +41,10 @@ class RedPacketOpenDialog extends StatefulWidget {
 }
 
 class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   bool _isOpening = false;
   bool _opened = false;
+  bool _showBurst = false;
   double _claimedAmount = 0;
   late AnimationController _rotateController;
 
@@ -79,6 +87,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
           setState(() {
             _opened = true;
             _claimedAmount = amount;
+            _showBurst = true;
           });
         } else {
           // 已领取/已过期/已领完 — 直接关闭跳详情
@@ -113,7 +122,23 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
       child: SizedBox(
         width: double.infinity,
         height: double.infinity,
-        child: _opened ? _buildOpenedLayout() : _buildUnopenedLayout(),
+        child: Stack(
+          children: [
+            _opened ? _buildOpenedLayout() : _buildUnopenedLayout(),
+            // 开包爆发覆盖层（按 VIP effectKey 分级渲染）
+            if (_showBurst)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: RedPacketOpenBurst(
+                    effectKey: widget.senderEffectKey,
+                    onComplete: () {
+                      if (mounted) setState(() => _showBurst = false);
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -158,35 +183,39 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 红色卡片
-              Container(
-                width: screenSize.width * 0.8,
-                height: screenSize.height * 0.56,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [_rpRed, _rpRedDark],
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 3),
-                    _buildOpenedContent(),
-                    const Spacer(flex: 3),
-                    // 弧形分隔
-                    ClipPath(
-                      clipper: _ArcClipper(),
-                      child: Container(
-                        height: 24,
-                        color: Colors.white.withValues(alpha: 0.06),
-                      ),
+              // 红色卡片（外包 VIP 动效覆盖层）
+              RedPacketEffectOverlay(
+                effectKey: widget.senderEffectKey,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: screenSize.width * 0.8,
+                  height: screenSize.height * 0.56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [_rpRed, _rpRedDark],
                     ),
-                    // 查看领取详情
-                    _buildViewDetailButton(),
-                    const SizedBox(height: 8),
-                  ],
+                  ),
+                  child: Column(
+                    children: [
+                      const Spacer(flex: 3),
+                      _buildOpenedContent(),
+                      const Spacer(flex: 3),
+                      // 弧形分隔
+                      ClipPath(
+                        clipper: _ArcClipper(),
+                        child: Container(
+                          height: 24,
+                          color: Colors.white.withValues(alpha: 0.06),
+                        ),
+                      ),
+                      // 查看领取详情
+                      _buildViewDetailButton(),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -227,7 +256,10 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
         ? widget.greeting
         : l.get('rp_default_greeting');
 
-    return Container(
+    return RedPacketEffectOverlay(
+      effectKey: widget.senderEffectKey,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
       width: screenSize.width * 0.8,
       height: screenSize.height * 0.56,
       decoration: BoxDecoration(
@@ -322,6 +354,7 @@ class _RedPacketOpenDialogState extends State<RedPacketOpenDialog>
             ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -1,6 +1,14 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -23,6 +31,7 @@ import '../wallet/reward_pay_dialog.dart';
 import '../../config/currency.dart';
 import '../../widgets/coin_icon.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/vip_decoration.dart';
 import '../../widgets/disclaimer_banner.dart';
 import '../../widgets/ai_banner.dart';
 import '../../widgets/report_dialog.dart';
@@ -88,13 +97,33 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)!.get('detail')),
         actions: [
-          IconButton(icon: const Icon(Icons.share), onPressed: _share),
           PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
             onSelected: (value) {
+              if (value == 'share') _share();
               if (value == 'report') _showReport();
             },
             itemBuilder: (_) => [
-              PopupMenuItem(value: 'report', child: Text(AppLocalizations.of(context)!.get('report'))),
+              PopupMenuItem(
+                value: 'share',
+                child: Row(
+                  children: [
+                    const Icon(Icons.share_outlined, size: 20, color: AppTheme.textPrimary),
+                    const SizedBox(width: 12),
+                    Text(AppLocalizations.of(context)!.get('share')),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'report',
+                child: Row(
+                  children: [
+                    const Icon(Icons.flag_outlined, size: 20, color: AppTheme.textPrimary),
+                    const SizedBox(width: 12),
+                    Text(AppLocalizations.of(context)!.get('report')),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -250,13 +279,28 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
         children: [
           GestureDetector(
             onTap: !isMe ? () => _showUserProfile(user) : null,
-            child: AvatarWidget(avatarPath: user.avatar, name: user.nickname, size: 44),
+            child: VipAvatarFrame(
+              vip: user.vip,
+              child: AvatarWidget(avatarPath: user.avatar, name: user.nickname, size: 44),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
               onTap: !isMe ? () => _showUserProfile(user) : null,
-              child: Text(user.nickname, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: VipNickname(
+                      vip: user.vip,
+                      text: user.nickname,
+                      baseStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  VipLevelBadge(vip: user.vip),
+                ],
+              ),
             ),
           ),
         ],
@@ -656,17 +700,36 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
   Future<void> _share() async {
     if (_post == null) return;
     final l = AppLocalizations.of(context)!;
+
+    // 先弹出分享方式选择：海报图片 vs 分享链接
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _ShareMethodSheet(l: l),
+    );
+
+    if (!mounted || choice == null) return;
+
+    if (choice == 'poster') {
+      await _shareAsPoster();
+    } else if (choice == 'link') {
+      await _shareAsLink();
+    }
+  }
+
+  Future<void> _shareAsLink() async {
+    if (_post == null) return;
+    final l = AppLocalizations.of(context)!;
     final appConfig = context.read<AppConfigProvider>();
     final baseUrl = appConfig.about['website_url'] ?? 'https://gohome.douwen.me';
     final shareUrl = '$baseUrl/#/post/detail?id=${_post!.id}';
     final shareText = '${l.get("app_name")} - ${_post!.categoryText}：${_post!.name}\n$shareUrl';
 
-    // 先复制链接到剪贴板
     await Clipboard.setData(ClipboardData(text: shareText));
-
     if (!mounted) return;
 
-    // 弹出分享底部面板
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -675,6 +738,21 @@ class _PostDetailPageState extends State<PostDetailPage> with SingleTickerProvid
       builder: (ctx) => _ShareSheet(
         shareText: shareText,
         shareUrl: shareUrl,
+      ),
+    );
+  }
+
+  Future<void> _shareAsPoster() async {
+    if (_post == null) return;
+    final appConfig = context.read<AppConfigProvider>();
+    final baseUrl = appConfig.about['website_url'] ?? 'https://gohome.douwen.me';
+    final shareUrl = '$baseUrl/#/post/detail?id=${_post!.id}';
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PostPosterPage(post: _post!, shareUrl: shareUrl),
       ),
     );
   }
@@ -763,16 +841,6 @@ class _ShareSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildShareTarget(
-                  context,
-                  icon: 'wechat',
-                  label: l.get('share_wechat'),
-                  color: const Color(0xFF07C160),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _openWeChat();
-                  },
-                ),
                 _buildShareTarget(
                   context,
                   icon: 'telegram',
@@ -871,26 +939,25 @@ class _ShareSheet extends StatelessWidget {
 
   Widget _buildBrandIcon(String brand) {
     switch (brand) {
-      case 'wechat':
-        return CustomPaint(size: const Size(28, 28), painter: _WeChatPainter());
       case 'telegram':
-        return CustomPaint(size: const Size(28, 28), painter: _TelegramPainter());
+        return SvgPicture.asset(
+          'assets/icon/telegram.svg',
+          width: 30,
+          height: 30,
+          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+        );
       case 'whatsapp':
-        return CustomPaint(size: const Size(28, 28), painter: _WhatsAppPainter());
+        return SvgPicture.asset(
+          'assets/icon/whatsapp.svg',
+          width: 30,
+          height: 30,
+          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+        );
       case 'copy':
         return const Icon(Icons.copy, size: 24, color: Colors.white);
       default:
         return const Icon(Icons.share, size: 24, color: Colors.white);
     }
-  }
-
-  void _openWeChat() async {
-    // 微信无法直接通过 URL scheme 传递文本，只能尝试打开微信
-    // 用户需要手动粘贴已复制的内容
-    final uri = Uri.parse('weixin://');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
   }
 
   void _shareToTelegram() async {
@@ -1011,90 +1078,518 @@ class _VideoItemState extends State<_VideoItem> {
   }
 }
 
-// ==================== 品牌图标绘制 ====================
+// ==================== 分享方式选择面板 ====================
 
-/// 微信图标
-class _WeChatPainter extends CustomPainter {
+class _ShareMethodSheet extends StatelessWidget {
+  final AppLocalizations l;
+  const _ShareMethodSheet({required this.l});
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    // 大气泡
-    canvas.drawOval(Rect.fromCenter(center: Offset(cx - 1, cy + 1), width: size.width * 0.62, height: size.height * 0.5), paint);
-    // 小气泡
-    canvas.drawOval(Rect.fromCenter(center: Offset(cx + 5, cy - 4), width: size.width * 0.46, height: size.height * 0.38), paint);
-    // 大气泡的眼睛
-    final eyePaint = Paint()..color = const Color(0xFF07C160)..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(cx - 4, cy + 0.5), 1.5, eyePaint);
-    canvas.drawCircle(Offset(cx + 2, cy + 0.5), 1.5, eyePaint);
-    // 小气泡的眼睛
-    canvas.drawCircle(Offset(cx + 3, cy - 4.5), 1.2, eyePaint);
-    canvas.drawCircle(Offset(cx + 7.5, cy - 4.5), 1.2, eyePaint);
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l.get('share_choose_method'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            _option(
+              context,
+              icon: Icons.image_rounded,
+              color: const Color(0xFFFF6F61),
+              title: l.get('share_as_poster'),
+              subtitle: l.get('share_as_poster_tip'),
+              onTap: () => Navigator.pop(context, 'poster'),
+            ),
+            const SizedBox(height: 10),
+            _option(
+              context,
+              icon: Icons.link_rounded,
+              color: AppTheme.primaryColor,
+              title: l.get('share_as_link'),
+              subtitle: l.get('share_as_link_tip'),
+              onTap: () => Navigator.pop(context, 'link'),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.grey[100],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(l.get('cancel'), style: const TextStyle(color: AppTheme.textSecondary)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget _option(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey[400]),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-/// Telegram 图标（纸飞机）
-class _TelegramPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-    final w = size.width;
-    final h = size.height;
+// ==================== 启事海报页 ====================
 
-    final path = Path()
-      ..moveTo(w * 0.12, h * 0.48)
-      ..lineTo(w * 0.88, h * 0.18)
-      ..lineTo(w * 0.68, h * 0.82)
-      ..lineTo(w * 0.48, h * 0.60)
-      ..close();
-    canvas.drawPath(path, paint);
-
-    final path2 = Path()
-      ..moveTo(w * 0.48, h * 0.60)
-      ..lineTo(w * 0.62, h * 0.82)
-      ..lineTo(w * 0.68, h * 0.82)
-      ..lineTo(w * 0.48, h * 0.60)
-      ..close();
-    canvas.drawPath(path2, paint);
-  }
+class PostPosterPage extends StatefulWidget {
+  final PostModel post;
+  final String shareUrl;
+  const PostPosterPage({super.key, required this.post, required this.shareUrl});
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  State<PostPosterPage> createState() => _PostPosterPageState();
 }
 
-/// WhatsApp 图标（电话气泡）
-class _WhatsAppPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white..style = PaintingStyle.fill;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
+class _PostPosterPageState extends State<PostPosterPage> {
+  final GlobalKey _posterKey = GlobalKey();
+  bool _busy = false;
 
-    // 气泡圆
-    canvas.drawCircle(Offset(cx, cy), size.width * 0.38, paint);
+  Future<File?> _capturePoster() async {
+    try {
+      // 等待一帧，确保 boundary 已布局
+      await Future.delayed(const Duration(milliseconds: 100));
+      final boundary = _posterKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/poster_${widget.post.id}_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      return file;
+    } catch (e) {
+      debugPrint('[Poster] capture error: $e');
+      return null;
+    }
+  }
 
-    // 电话听筒
-    final phonePaint = Paint()
-      ..color = const Color(0xFF25D366)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
+  Future<void> _sharePoster() async {
+    if (_busy) return;
+    final l = AppLocalizations.of(context)!;
+    setState(() => _busy = true);
+    try {
+      final file = await _capturePoster();
+      if (file == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.get('poster_share_failed'))));
+        }
+        return;
+      }
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        text: '${l.get("app_name")} - ${widget.post.name}\n${widget.shareUrl}',
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
-    final phonePath = Path()
-      ..moveTo(cx - 4.5, cy + 3)
-      ..quadraticBezierTo(cx - 4.5, cy - 4, cx, cy - 4.5)
-      ..quadraticBezierTo(cx + 4.5, cy - 4, cx + 4.5, cy + 3);
-    canvas.drawPath(phonePath, phonePaint);
+  Future<void> _savePoster() async {
+    if (_busy) return;
+    final l = AppLocalizations.of(context)!;
+    setState(() => _busy = true);
+    try {
+      // 检查并请求相册写入权限
+      final hasAccess = await Gal.hasAccess(toAlbum: true);
+      if (!hasAccess) {
+        final granted = await Gal.requestAccess(toAlbum: true);
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l.get('poster_share_failed'))),
+            );
+          }
+          return;
+        }
+      }
 
-    // 听筒两端
-    canvas.drawLine(Offset(cx - 5, cy + 0.5), Offset(cx - 4, cy + 4), phonePaint);
-    canvas.drawLine(Offset(cx + 5, cy + 0.5), Offset(cx + 4, cy + 4), phonePaint);
+      final file = await _capturePoster();
+      if (file == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.get('poster_share_failed'))));
+        }
+        return;
+      }
+      await Gal.putImage(file.path, album: 'go_home');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l.get('poster_saved')),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Poster] save error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.get('poster_share_failed'))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final post = widget.post;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A1A),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
+        title: Text(l.get('share_as_poster')),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: RepaintBoundary(
+                    key: _posterKey,
+                    child: _PosterCard(post: post, shareUrl: widget.shareUrl, l: l),
+                  ),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: const BoxDecoration(
+                color: Color(0xFF222222),
+                border: Border(top: BorderSide(color: Color(0xFF333333))),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _savePoster,
+                      icon: _busy
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.download_rounded, size: 18),
+                      label: Text(_busy ? l.get('poster_generating') : l.get('poster_save_btn')),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white54),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _busy ? null : _sharePoster,
+                      icon: _busy
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.share, size: 18),
+                      label: Text(_busy ? l.get('poster_generating') : l.get('poster_share_btn')),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 海报卡片：顶部标题 / 中间大图 / 信息块 / 底部二维码
+class _PosterCard extends StatelessWidget {
+  final PostModel post;
+  final String shareUrl;
+  final AppLocalizations l;
+  const _PosterCard({required this.post, required this.shareUrl, required this.l});
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final cardW = screenW - 32;
+
+    return Container(
+      width: cardW,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 6))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ===== 顶部：大标题（情绪 + 关键信息） =====
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFF5252), Color(0xFFFF8A4C)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.campaign_rounded, color: Colors.white, size: 22),
+                      const SizedBox(width: 6),
+                      Text(
+                        l.get('poster_urgent_title'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          post.categoryText,
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    post.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (post.hasReward) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFE082),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${l.get("reward_bounty")} ${post.rewardAmount.toStringAsFixed(0)}',
+                        style: const TextStyle(color: Color(0xFFD84315), fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // ===== 中间：宠物大图（占 50% 以上） =====
+            AspectRatio(
+              aspectRatio: 1,
+              child: _coverImage(post),
+            ),
+
+            // ===== 下方：关键信息块 =====
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              color: const Color(0xFFFFF8F6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _infoLine(Icons.access_time_rounded, l.get('poster_info_time'), post.lostAt),
+                  _infoLine(Icons.location_on_rounded, l.get('poster_info_place'), post.locationText),
+                  _infoLine(
+                    Icons.pets_rounded,
+                    l.get('poster_info_features'),
+                    post.appearance,
+                    maxLines: 3,
+                  ),
+                  _infoLine(Icons.phone_rounded, l.get('poster_info_contact'), _maskedContact(post)),
+                ],
+              ),
+            ),
+
+            // ===== 底部：二维码 + 引导语 =====
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+              color: Colors.white,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE0E0E0)),
+                    ),
+                    child: QrImageView(
+                      data: shareUrl,
+                      size: 80,
+                      backgroundColor: Colors.white,
+                      errorCorrectionLevel: QrErrorCorrectLevel.H,
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.get('poster_scan_tip'),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l.get('app_name'),
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l.get('app_slogan'),
+                          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _coverImage(PostModel post) {
+    final url = post.images.isNotEmpty ? post.images.first.imageUrl : '';
+    if (url.isEmpty || isVideoFile(url)) {
+      return Container(
+        color: const Color(0xFFF0F0F0),
+        child: const Center(
+          child: Icon(Icons.pets_rounded, size: 72, color: Color(0xFFBDBDBD)),
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => Container(color: const Color(0xFFF0F0F0)),
+      errorWidget: (_, __, ___) => Container(
+        color: const Color(0xFFF0F0F0),
+        child: const Center(child: Icon(Icons.broken_image, size: 48, color: Color(0xFFBDBDBD))),
+      ),
+    );
+  }
+
+  Widget _infoLine(IconData icon, String label, String value, {int maxLines = 2}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFFFF5252)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? '-' : value,
+              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.4),
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _maskedContact(PostModel post) {
+    final phone = post.contactPhone;
+    if (phone.isEmpty) return '-';
+    // 手机号隐去中间四位
+    if (phone.length >= 11) {
+      return '${phone.substring(0, 3)}****${phone.substring(phone.length - 4)}';
+    }
+    return phone;
+  }
 }

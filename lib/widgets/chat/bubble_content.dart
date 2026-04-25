@@ -338,6 +338,21 @@ class BubbleContent extends StatelessWidget {
       }
     } catch (_) {}
 
+    // 发送者 VIP：优先读 content 中的快照，兜底用消息的 senderVip
+    // （首次发送时尚未有快照，退回当前 VIP；历史消息若后端已回传 sender_vip_level，则用快照）
+    String senderVipLevel = 'normal';
+    try {
+      if (msg.content.startsWith('{')) {
+        final data = jsonDecode(msg.content) as Map<String, dynamic>;
+        if (data['sender_vip_level'] is String) {
+          senderVipLevel = data['sender_vip_level'];
+        }
+      }
+    } catch (_) {}
+    if (senderVipLevel == 'normal' && msg.senderVip != null) {
+      senderVipLevel = msg.senderVip!.levelKey;
+    }
+
     return RedPacketCard(
       redPacketId: redPacketId,
       senderName: msg.nickname,
@@ -345,6 +360,7 @@ class BubbleContent extends StatelessWidget {
       isMine: isMe,
       hasClaimed: hasClaimed,
       onTap: onRedPacketTap ?? () {},
+      senderVipLevel: senderVipLevel,
     );
   }
 

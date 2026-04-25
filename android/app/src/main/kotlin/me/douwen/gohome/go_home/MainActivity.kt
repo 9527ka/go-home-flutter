@@ -1,11 +1,14 @@
 package me.douwen.gohome.go_home
 
 import android.media.RingtoneManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// 继承 FlutterFragmentActivity 而非 FlutterActivity：
+// TUICallKit 的来电 / 通话页会用 DialogFragment 做悬浮/覆盖 UI，要求宿主 Activity 是 FragmentActivity。
+// 用普通 FlutterActivity 时，通话 UI 可能不弹或崩溃。
+class MainActivity : FlutterFragmentActivity() {
     private val soundChannelName = "com.gohome/sound"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

@@ -22,13 +22,14 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../models/chat_message.dart';
-// import '../../services/call_signaling_service.dart'; // 语音通话暂时关闭
+import '../../services/call_service.dart';
 import '../../services/chat_database.dart';
 import '../../services/chat_service.dart';
 import '../../services/pm_service.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/vip_decoration.dart';
 import '../../widgets/chat/voice_record_overlay.dart';
 import '../../widgets/chat/date_separator.dart';
 import '../../widgets/chat/media_panel.dart';
@@ -137,6 +138,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     convProvider.setActiveConversation(widget.friendId, 'private');
     _loadHistory();
     _registerWsHandler();
+
+    // 进入私聊页时预暖麦克风权限（非官方账号才可能发起通话），避免首次点通话按钮
+    // 被系统权限弹窗阻塞，表现为"第一次点击卡住不动"
+    if (!widget.friendIsOfficial) {
+      CallService.instance.prewarmMicPermission();
+    }
 
     _msgCtrl.addListener(() {
       final hasText = _msgCtrl.text.trim().isNotEmpty;
@@ -1056,6 +1063,11 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Widget _buildMediaPanel(AppLocalizations l) {
+    // 诊断输出：APK 安装到手机后开 `adb logcat | grep MediaPanel-diag` 可看到运行时真实值
+    // ignore: avoid_print
+    print('[MediaPanel-diag] friendIsOfficial=${widget.friendIsOfficial} '
+        'walletEnabled=${context.read<AppConfigProvider>().walletEnabled} '
+        'voiceCallLabel="${l.get('voice_call')}"');
     return MediaPanel(
       onPickImage: _pickAndSendImage,
       onTakePhoto: _takeAndSendPhoto,
@@ -1063,7 +1075,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       onSendRedPacket: context.read<AppConfigProvider>().walletEnabled
           ? _showRedPacketDialog
           : null,
-      onVoiceCall: null, // 语音通话暂时关闭
+      // 临时：无条件显示语音通话按钮，排除 friendIsOfficial 被错误置 true 的嫌疑
+      // 定位到问题后再恢复成 `widget.friendIsOfficial ? null : _startVoiceCall`
+      onVoiceCall: _startVoiceCall,
       pickImageLabel: l.get('chat_album'),
       takePhotoLabel: l.get('take_photo'),
       pickVideoLabel: l.get('chat_video'),
@@ -1072,8 +1086,49 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     );
   }
 
-  // 语音通话暂时关闭
-  // Future<void> _startVoiceCall() async { ... }
+  /// 发起私聊语音通话（TUICallKit — UI/信令由 SDK 内部处理）
+  ///
+  /// 若 TUICallKit 长连接未就绪，`callVoice` 会 await 登录完成，最长 5s；
+  /// 期间立即弹出 loading 指示，避免用户以为"点了没反应"再点第二下。
+  bool _callInFlight = false;
+  Future<void> _startVoiceCall() async {
+    if (_callInFlight) return; // 防抖：用户连点时忽略后续点击
+    _callInFlight = true;
+
+    final messenger = ScaffoldMessenger.of(context);
+    // 立即反馈：登录就绪前可能会阻塞 1~3s
+    final loadingBar = messenger.showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('正在接通语音通话…'),
+          ],
+        ),
+        duration: Duration(seconds: 10),
+      ),
+    );
+
+    bool ok = false;
+    try {
+      ok = await CallService.instance.callVoice(widget.friendId);
+    } finally {
+      _callInFlight = false;
+      loadingBar.close();
+    }
+    if (!mounted || ok) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('发起通话失败，请检查网络后重试'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
 
   // ===== 消息气泡 =====
 
@@ -1087,7 +1142,10 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       nickname: msg.nickname,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
-      avatar: AvatarWidget(avatarPath: avatarPath, name: msg.nickname, size: 36, isOfficial: !isMe && widget.friendIsOfficial),
+      avatar: VipAvatarFrame(
+        vip: msg.senderVip,
+        child: AvatarWidget(avatarPath: avatarPath, name: msg.nickname, size: 36, isOfficial: !isMe && widget.friendIsOfficial),
+      ),
       onLongPress: _isMultiSelectMode ? null : (rect) => _showMessageActions(msg, isMe, rect),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
@@ -1099,6 +1157,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       ),
       content: _buildBubbleContent(msg, isMe),
       statusBadge: isMe ? _buildStatusBadge(msg) : null,
+      senderVip: msg.senderVip,
     );
 
     // 多选模式：左侧显示勾选框
@@ -1466,16 +1525,20 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     _claimingRedPacketIds.add(redPacketId);
 
     try {
-      // 先查询红包详情，判断是否已领取
+      // 先查询红包详情，判断是否已领取、并拿到 VIP 皮肤动效 key
       bool alreadyClaimed = false;
       double claimedAmount = 0;
+      String senderEffectKey = 'none';
       try {
         final detail = await WalletService().getRedPacketDetail(redPacketId);
-        if (detail != null && detail.hasClaimed) {
-          alreadyClaimed = true;
-          claimedAmount = detail.myClaim!.amount;
-          if (!_claimedRedPacketIds.contains(redPacketId)) {
-            setState(() => _claimedRedPacketIds.add(redPacketId));
+        if (detail != null) {
+          senderEffectKey = detail.senderEffectKey;
+          if (detail.hasClaimed) {
+            alreadyClaimed = true;
+            claimedAmount = detail.myClaim!.amount;
+            if (!_claimedRedPacketIds.contains(redPacketId)) {
+              setState(() => _claimedRedPacketIds.add(redPacketId));
+            }
           }
         }
       } catch (_) {}
@@ -1493,6 +1556,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
           greeting: greeting,
           alreadyClaimed: alreadyClaimed,
           claimedAmount: claimedAmount,
+          senderEffectKey: senderEffectKey,
         ),
       );
 

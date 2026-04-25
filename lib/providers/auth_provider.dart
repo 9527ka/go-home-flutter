@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
+import '../services/call_service.dart';
 import '../services/chat_database.dart';
 import '../services/push_service.dart';
 import '../utils/storage.dart';
@@ -17,6 +19,22 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _isLoggedIn;
   bool get initialized => _initialized;
+
+  /// 登录成功后的统一后置处理：
+  /// - 初始化本地聊天数据库
+  /// - 申请推送权限
+  /// - 登录 TUICallKit 长连接（用于接收私聊语音来电）
+  ///
+  /// 所有子步骤均 fire-and-forget，不阻塞登录流程。
+  void _afterLoginSuccess() {
+    final u = _user;
+    if (u == null) return;
+    ChatDatabase.instance.init(u.id);
+    PushService.instance.requestPermission();
+    unawaited(
+      CallService.instance.login(nickname: u.nickname, avatar: u.avatar),
+    );
+  }
 
   /// 初始化：检查本地登录状态（单次 SharedPreferences 读取，减少启动延迟）
   Future<void> init() async {
@@ -35,9 +53,7 @@ class AuthProvider extends ChangeNotifier {
     if (_isLoggedIn && auth.userInfo != null) {
       _user = UserModel.fromJson(auth.userInfo!);
       // 以下均为 fire-and-forget，不阻塞启动
-      ChatDatabase.instance.init(_user!.id);
-      // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
-      PushService.instance.requestPermission();
+      _afterLoginSuccess();
     }
     _initialized = true;
     notifyListeners();
@@ -60,9 +76,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        _afterLoginSuccess();
         // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
-        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -92,9 +107,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        _afterLoginSuccess();
         // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
-        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -130,9 +144,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        _afterLoginSuccess();
         // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
-        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -159,9 +172,8 @@ class AuthProvider extends ChangeNotifier {
         if (res['data']?['userInfo'] != null) {
           _user = UserModel.fromJson(res['data']['userInfo']);
         }
-        if (_user != null) ChatDatabase.instance.init(_user!.id);
+        _afterLoginSuccess();
         // IAP 延迟到用户打开充值页时初始化（避免 StoreKit 拖慢启动）
-        PushService.instance.requestPermission();
         notifyListeners();
         return null; // 成功
       }
@@ -262,6 +274,11 @@ class AuthProvider extends ChangeNotifier {
         // 同步到本地存储
         await StorageUtil.saveUserInfo(user.toJson());
         notifyListeners();
+        // 昵称/头像同步到 TUICallKit（来电界面显示）
+        unawaited(CallService.instance.setSelfInfo(
+          nickname: user.nickname,
+          avatar: user.avatar,
+        ));
       }
     } catch (e) {
       // ignore
@@ -282,6 +299,7 @@ class AuthProvider extends ChangeNotifier {
       if (res['code'] == 0) {
         // 注销推送令牌并清除所有本地数据
         await PushService.instance.unregister();
+        await CallService.instance.logout();
         await _authService.logout();
         _user = null;
         _isLoggedIn = false;
@@ -300,6 +318,7 @@ class AuthProvider extends ChangeNotifier {
   /// 退出登录
   Future<void> logout() async {
     await PushService.instance.unregister();
+    await CallService.instance.logout();
     await _authService.logout();
     await StorageUtil.clearPostsCache();
     await StorageUtil.clearChatCache();

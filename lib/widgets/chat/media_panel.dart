@@ -31,10 +31,18 @@ class MediaPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final items = <Widget>[
+      _mediaItem(Icons.image_outlined, pickImageLabel, onPickImage),
+      _mediaItem(Icons.camera_alt_outlined, takePhotoLabel, onTakePhoto),
+      _mediaItem(Icons.videocam_outlined, pickVideoLabel, onPickVideo),
+      if (onSendRedPacket != null && redPacketLabel != null)
+        _mediaImageItem('assets/icon/red.svg', redPacketLabel!, onSendRedPacket!),
+      if (onVoiceCall != null && voiceCallLabel != null)
+        _mediaItem(Icons.call_outlined, voiceCallLabel!, onVoiceCall!),
+    ];
+
     return Container(
       padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
         top: 16,
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
@@ -44,17 +52,19 @@ class MediaPanel extends StatelessWidget {
           top: BorderSide(color: AppTheme.dividerColor, width: 0.5),
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _mediaItem(Icons.image_outlined, pickImageLabel, onPickImage),
-          _mediaItem(Icons.camera_alt_outlined, takePhotoLabel, onTakePhoto),
-          _mediaItem(Icons.videocam_outlined, pickVideoLabel, onPickVideo),
-          if (onSendRedPacket != null && redPacketLabel != null)
-            _mediaImageItem('assets/icon/red.svg', redPacketLabel!, onSendRedPacket!),
-          if (onVoiceCall != null && voiceCallLabel != null)
-            _mediaItem(Icons.call_outlined, voiceCallLabel!, onVoiceCall!),
-        ],
+      // 改用横向可滚动布局：按钮数量 3~6 个都能完整显示，窄屏 Android 也不会被裁
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              items[i],
+            ],
+          ],
+        ),
       ),
     );
   }

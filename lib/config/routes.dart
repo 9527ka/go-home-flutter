@@ -31,6 +31,8 @@ import '../pages/wallet/withdraw_page.dart';
 import '../pages/wallet/transaction_history_page.dart';
 import '../pages/wallet/red_packet_detail_page.dart';
 import '../pages/sign/sign_page.dart';
+import '../pages/lottery/lottery_page.dart';
+import '../pages/vip/vip_center_page.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -73,6 +75,12 @@ class AppRoutes {
   static const String walletTransactions = '/wallet/transactions';
   static const String redPacketDetail = '/red-packet/detail';
 
+  // 抽奖
+  static const String lottery = '/lottery';
+
+  // VIP
+  static const String vipCenter = '/vip';
+
   static Map<String, WidgetBuilder> get routes => {
         splash: (_) => const SplashPage(),
         login: (_) => const LoginPage(),
@@ -103,14 +111,53 @@ class AppRoutes {
         walletRecharge: (_) => const RechargePage(),
         walletWithdraw: (_) => const WithdrawPage(),
         walletTransactions: (_) => const TransactionHistoryPage(),
+        // 抽奖
+        lottery: (_) => const LotteryPage(),
+        // VIP
+        vipCenter: (_) => const VipCenterPage(),
       };
+
+  /// Web 深链接待消费目标：主页加载后由 SplashPage 消费并跳转
+  /// 用于 https://host/#/post/detail?id=123 这类链接直达详情
+  static int? pendingPostDetailId;
+
+  /// 应用启动时调用，解析浏览器初始 URL，生成初始路由栈
+  /// - 始终以 splash 为栈底，避免 push/replacement 与 deep link 冲突
+  /// - 若 URL 含 /post/detail?id=xxx，将 id 暂存到 pendingPostDetailId
+  static List<Route<dynamic>> onGenerateInitialRoutes(String initialRoute) {
+    try {
+      final uri = Uri.parse(initialRoute);
+      if (uri.path == postDetail) {
+        final id = int.tryParse(uri.queryParameters['id'] ?? '');
+        if (id != null) pendingPostDetailId = id;
+      }
+    } catch (_) {}
+    return [
+      MaterialPageRoute(
+        settings: const RouteSettings(name: splash),
+        builder: (_) => const SplashPage(),
+      ),
+    ];
+  }
 
   /// 需要传参的页面，用 onGenerateRoute
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
-    if (settings.name == postDetail) {
-      final postId = settings.arguments as int;
+    // 兼容 Web 深链接：settings.name 可能是 "/post/detail?id=123"
+    final rawName = settings.name ?? '';
+    final uri = Uri.tryParse(rawName);
+    final path = uri?.path ?? rawName;
+
+    if (path == postDetail) {
+      int? postId;
+      if (settings.arguments is int) {
+        postId = settings.arguments as int;
+      } else {
+        postId = int.tryParse(uri?.queryParameters['id'] ?? '');
+      }
+      if (postId == null) return null;
       return MaterialPageRoute(
-        builder: (_) => PostDetailPage(postId: postId),
+        settings: RouteSettings(name: postDetail, arguments: postId),
+        builder: (_) => PostDetailPage(postId: postId!),
       );
     }
     if (settings.name == postEdit) {

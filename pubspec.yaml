@@ -91,11 +91,14 @@ dependencies:
   # SVG 图标渲染
   flutter_svg: ^2.0.10
 
-  # 腾讯云 TRTC / RTC Engine（私聊语音通话）— 暂时关闭
-  # tencent_rtc_sdk: ^13.2.1
-  # vibration: ^2.0.0
+  # 保存图片到系统相册（海报保存）
+  gal: ^2.3.0
 
-  # UUID（通话 call_id 生成）
+  # 腾讯云 TUICallKit（私聊语音/视频通话 —— 含完整 UI + 信令 + 离线推送）
+  # 文档：https://cloud.tencent.com/document/product/647/82985
+  tencent_calls_uikit: ^4.0.0
+
+  # UUID（历史保留，部分模块仍在使用）
   uuid: ^4.3.0
   mobile_scanner: ^7.2.0
   sqflite: ^2.4.2

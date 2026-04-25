@@ -4,6 +4,8 @@ import '../../l10n/app_localizations.dart';
 import '../../models/red_packet.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
+import '../../widgets/red_packet_effect.dart';
+import '../../widgets/vip_decoration.dart';
 
 class RedPacketDetailPage extends StatefulWidget {
   final int redPacketId;
@@ -63,8 +65,11 @@ class _RedPacketDetailPageState extends State<RedPacketDetailPage> {
 
     return Column(
       children: [
-        // ======= 红色顶部区域 =======
-        Container(
+        // ======= 红色顶部区域（按发送者 VIP 皮肤叠加动效） =======
+        RedPacketEffectOverlay(
+          effectKey: packet.senderEffectKey,
+          borderRadius: BorderRadius.zero,
+          child: Container(
           width: double.infinity,
           padding: EdgeInsets.only(top: topPadding),
           color: _rpRed,
@@ -82,22 +87,26 @@ class _RedPacketDetailPageState extends State<RedPacketDetailPage> {
 
               const SizedBox(height: 24),
 
-              // 发送者头像 + 名字
+              // 发送者头像 + 名字（带 VIP 皮肤装饰）
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: sender?.avatar != null && sender!.avatar.isNotEmpty
-                        ? Image.network(
-                            UrlHelper.ensureAbsolute(sender.avatar),
-                            width: 36,
-                            height: 36,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _avatarPlaceholder(sender.nickname, 36),
-                          )
-                        : _avatarPlaceholder(sender?.nickname, 36),
+                  VipAvatarFrame(
+                    vip: sender?.vip,
+                    borderWidth: 1.5,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: sender?.avatar != null && sender!.avatar.isNotEmpty
+                          ? Image.network(
+                              UrlHelper.ensureAbsolute(sender.avatar),
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _avatarPlaceholder(sender.nickname, 36),
+                            )
+                          : _avatarPlaceholder(sender?.nickname, 36),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -108,6 +117,10 @@ class _RedPacketDetailPageState extends State<RedPacketDetailPage> {
                       color: _goldText,
                     ),
                   ),
+                  if (packet.senderVipLevel != 'normal') ...[
+                    const SizedBox(width: 6),
+                    VipLevelBadge(vip: sender?.vip, fontSize: 10),
+                  ],
                 ],
               ),
 
@@ -171,6 +184,7 @@ class _RedPacketDetailPageState extends State<RedPacketDetailPage> {
 
               const SizedBox(height: 24),
             ],
+          ),
           ),
         ),
 

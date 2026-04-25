@@ -1,6 +1,8 @@
 PODS:
   - apple_maps_flutter (0.0.1):
     - Flutter
+  - atomic_x_core (0.0.1):
+    - Flutter
   - audio_session (0.0.1):
     - Flutter
   - emoji_picker_flutter (0.0.1):
@@ -13,9 +15,13 @@ PODS:
     - SDWebImageWebPCoder
   - fluttertoast (0.0.2):
     - Flutter
+  - gal (1.0.0):
+    - Flutter
+    - FlutterMacOS
   - geolocator_apple (1.2.0):
     - Flutter
     - FlutterMacOS
+  - HydraAsync (2.0.6)
   - image_cropper (0.0.4):
     - Flutter
     - TOCropViewController (~> 2.7.4)
@@ -42,6 +48,7 @@ PODS:
   - Mantle (2.2.0):
     - Mantle/extobjc (= 2.2.0)
   - Mantle/extobjc (2.2.0)
+  - Masonry (1.1.0)
   - mobile_scanner (7.0.0):
     - Flutter
     - FlutterMacOS
@@ -52,6 +59,12 @@ PODS:
     - Flutter
   - record_ios (1.2.0):
     - Flutter
+  - rtc_room_engine_impl (4.0.1):
+    - Flutter
+    - RTCRoomEngine/Professional (~> 4.0.1)
+  - RTCRoomEngine/Professional (4.0.9):
+    - TXIMSDK_Plus_iOS_XCFramework (>= 8.4.6676)
+    - TXLiteAVSDK_Professional (>= 12.8.0.19666)
   - SDWebImage (5.21.6):
     - SDWebImage/Core (= 5.21.6)
   - SDWebImage/Core (5.21.6)
@@ -68,7 +81,38 @@ PODS:
   - sqflite_darwin (0.0.4):
     - Flutter
     - FlutterMacOS
+  - tencent_calls_uikit (0.0.1):
+    - Flutter
+    - RTCRoomEngine/Professional
+    - TUICore
+  - tencent_cloud_chat_sdk (8.0.0):
+    - Flutter
+    - HydraAsync
+    - TXIMSDK_Plus_iOS_XCFramework (~> 8.9.7540)
+  - tencent_cloud_uikit_core (0.0.1):
+    - Flutter
+  - tencent_rtc_sdk (0.0.1):
+    - Flutter
+    - TXCustomBeautyProcesserPlugin (= 1.0.2)
+    - TXLiteAVSDK_Professional (~> 13.2.20652)
   - TOCropViewController (2.7.4)
+  - TUICore (8.9.7511):
+    - SDWebImage
+    - TUICore/ImSDK_Plus (= 8.9.7511)
+  - TUICore/Base (8.9.7511):
+    - SDWebImage
+  - TUICore/ImSDK_Plus (8.9.7511):
+    - SDWebImage
+    - TUICore/Base
+    - TXIMSDK_Plus_iOS_XCFramework
+  - tuikit_atomic_x (0.0.1):
+    - Flutter
+    - Masonry
+  - TXCustomBeautyProcesserPlugin (1.0.2)
+  - TXIMSDK_Plus_iOS_XCFramework (8.9.7540)
+  - TXLiteAVSDK_Professional (13.2.20652):
+    - TXLiteAVSDK_Professional/Professional (= 13.2.20652)
+  - TXLiteAVSDK_Professional/Professional (13.2.20652)
   - url_launcher_ios (0.0.1):
     - Flutter
   - video_player_avfoundation (0.0.1):
@@ -77,11 +121,13 @@ PODS:
 
 DEPENDENCIES:
   - apple_maps_flutter (from `.symlinks/plugins/apple_maps_flutter/ios`)
+  - atomic_x_core (from `.symlinks/plugins/atomic_x_core/ios`)
   - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - emoji_picker_flutter (from `.symlinks/plugins/emoji_picker_flutter/ios`)
   - Flutter (from `Flutter`)
   - flutter_image_compress_common (from `.symlinks/plugins/flutter_image_compress_common/ios`)
   - fluttertoast (from `.symlinks/plugins/fluttertoast/ios`)
+  - gal (from `.symlinks/plugins/gal/darwin`)
   - geolocator_apple (from `.symlinks/plugins/geolocator_apple/darwin`)
   - image_cropper (from `.symlinks/plugins/image_cropper/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
@@ -91,24 +137,39 @@ DEPENDENCIES:
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
+  - rtc_room_engine_impl (from `.symlinks/plugins/rtc_room_engine_impl/ios`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - sign_in_with_apple (from `.symlinks/plugins/sign_in_with_apple/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - tencent_calls_uikit (from `.symlinks/plugins/tencent_calls_uikit/ios`)
+  - tencent_cloud_chat_sdk (from `.symlinks/plugins/tencent_cloud_chat_sdk/ios`)
+  - tencent_cloud_uikit_core (from `.symlinks/plugins/tencent_cloud_uikit_core/ios`)
+  - tencent_rtc_sdk (from `.symlinks/plugins/tencent_rtc_sdk/ios`)
+  - tuikit_atomic_x (from `.symlinks/plugins/tuikit_atomic_x/ios`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
   - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
 
 SPEC REPOS:
   trunk:
+    - HydraAsync
     - libwebp
     - Mantle
+    - Masonry
+    - RTCRoomEngine
     - SDWebImage
     - SDWebImageWebPCoder
     - TOCropViewController
+    - TUICore
+    - TXCustomBeautyProcesserPlugin
+    - TXIMSDK_Plus_iOS_XCFramework
+    - TXLiteAVSDK_Professional
 
 EXTERNAL SOURCES:
   apple_maps_flutter:
     :path: ".symlinks/plugins/apple_maps_flutter/ios"
+  atomic_x_core:
+    :path: ".symlinks/plugins/atomic_x_core/ios"
   audio_session:
     :path: ".symlinks/plugins/audio_session/ios"
   emoji_picker_flutter:
@@ -119,6 +180,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_image_compress_common/ios"
   fluttertoast:
     :path: ".symlinks/plugins/fluttertoast/ios"
+  gal:
+    :path: ".symlinks/plugins/gal/darwin"
   geolocator_apple:
     :path: ".symlinks/plugins/geolocator_apple/darwin"
   image_cropper:
@@ -137,6 +200,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
   record_ios:
     :path: ".symlinks/plugins/record_ios/ios"
+  rtc_room_engine_impl:
+    :path: ".symlinks/plugins/rtc_room_engine_impl/ios"
   share_plus:
     :path: ".symlinks/plugins/share_plus/ios"
   shared_preferences_foundation:
@@ -145,6 +210,16 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/sign_in_with_apple/ios"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  tencent_calls_uikit:
+    :path: ".symlinks/plugins/tencent_calls_uikit/ios"
+  tencent_cloud_chat_sdk:
+    :path: ".symlinks/plugins/tencent_cloud_chat_sdk/ios"
+  tencent_cloud_uikit_core:
+    :path: ".symlinks/plugins/tencent_cloud_uikit_core/ios"
+  tencent_rtc_sdk:
+    :path: ".symlinks/plugins/tencent_rtc_sdk/ios"
+  tuikit_atomic_x:
+    :path: ".symlinks/plugins/tuikit_atomic_x/ios"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
   video_player_avfoundation:
@@ -152,32 +227,47 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   apple_maps_flutter: 2237d66a8e242082a2d88134af372f7b3375d7a6
+  atomic_x_core: 9ab26b4f42d08021f68ba622a35835e1f58cc463
   audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
   emoji_picker_flutter: ed468d9746c21711e66b2788880519a9de5de211
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_image_compress_common: 1697a328fd72bfb335507c6bca1a65fa5ad87df1
   fluttertoast: 2c67e14dce98bbdb200df9e1acf610d7a6264ea1
+  gal: baecd024ebfd13c441269ca7404792a7152fde89
   geolocator_apple: ab36aa0e8b7d7a2d7639b3b4e48308394e8cef5e
+  HydraAsync: 8d589bd725b0224f899afafc9a396327405f8063
   image_cropper: 5f162dcf988100dc1513f9c6b7eb42cd6fbf9156
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   in_app_purchase_storekit: 22cca7d08eebca9babdf4d07d0baccb73325d3c8
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   Mantle: c5aa8794a29a022dfbbfc9799af95f477a69b62d
+  Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
   record_ios: 412daca2350b228e698fffcd08f1f94ceb1e3844
+  rtc_room_engine_impl: d01fb0c78f2b8439902026c3ed47d131b7e7dcf5
+  RTCRoomEngine: 2e48210c905e4a8699d499aea498aaa1f3ecae9f
   SDWebImage: 1bb6a1b84b6fe87b972a102bdc77dd589df33477
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
   share_plus: de6030e33b4e106470e09322d87cf2a4258d2d1d
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   sign_in_with_apple: c5dcc141574c8c54d5ac99dd2163c0c72ad22418
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  tencent_calls_uikit: 6801c8e74a59502e6433c654192a89c2bfc83340
+  tencent_cloud_chat_sdk: 1a59df6cd6b2dd75e161581d8582c9345c9094ef
+  tencent_cloud_uikit_core: 137e8ae40882b1929508e688182b2818708cc078
+  tencent_rtc_sdk: b076a8a70f3f5f7c9c5b1badf8c5254d03740bda
   TOCropViewController: 80b8985ad794298fb69d3341de183f33d1853654
+  TUICore: 7360e867205b38f72974e42d094fbb06ea68fe1e
+  tuikit_atomic_x: 2990614794c0412f739818557ff565690d8d536c
+  TXCustomBeautyProcesserPlugin: 099393b941cb40eda12b3a80bf6c0319957b1cfd
+  TXIMSDK_Plus_iOS_XCFramework: 0dc0d5df48de5693b74d0fc42e267ed4e5c3a247
+  TXLiteAVSDK_Professional: e792e6084a208ecef6196c5f28237ad8078b4d7c
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
   video_player_avfoundation: dd410b52df6d2466a42d28550e33e4146928280a
 
-PODFILE CHECKSUM: c0915517eae1a513480956f02c7781054ca94770
+PODFILE CHECKSUM: fcf42e91f404bdf7e8a25b301a9506e3d9251034
 
 COCOAPODS: 1.16.2

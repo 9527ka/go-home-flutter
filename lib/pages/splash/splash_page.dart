@@ -10,6 +10,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/friend_provider.dart';
+import '../../services/http_client.dart';
 import '../../widgets/privacy_consent_dialog.dart';
 
 class SplashPage extends StatefulWidget {
@@ -81,6 +82,16 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     }
 
     Navigator.pushReplacementNamed(context, AppRoutes.home);
+
+    // 消费 Web 深链接：在 home 之上再推入目标详情页
+    final pendingPostId = AppRoutes.pendingPostDetailId;
+    if (pendingPostId != null) {
+      AppRoutes.pendingPostDetailId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final navigator = HttpClient.navigatorKey.currentState;
+        navigator?.pushNamed(AppRoutes.postDetail, arguments: pendingPostId);
+      });
+    }
   }
 
   /// 用户拒绝后，点击"重新查看"再次弹出隐私弹窗

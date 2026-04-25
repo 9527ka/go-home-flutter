@@ -108,6 +108,16 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () => Navigator.pushNamed(context, AppRoutes.myPosts),
                   ),
                   const Divider(indent: 58, height: 0.5),
+                  if (auth.isLoggedIn) ...[
+                    ProfileMenuItem(
+                      icon: Icons.workspace_premium_outlined,
+                      iconColor: AppTheme.warningColor,
+                      title: 'VIP 中心',
+                      subtitle: '开通 / 续费 / 专属特效',
+                      onTap: () => Navigator.pushNamed(context, AppRoutes.vipCenter),
+                    ),
+                    const Divider(indent: 58, height: 0.5),
+                  ],
                   ProfileMenuItem(
                     icon: Icons.favorite_outline,
                     iconColor: AppTheme.dangerColor,

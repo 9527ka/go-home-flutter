@@ -29,6 +29,7 @@ import '../../services/group_service.dart';
 import '../../services/wallet_service.dart';
 import '../../utils/url_helper.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/vip_decoration.dart';
 import '../../widgets/chat/voice_record_overlay.dart';
 import '../../widgets/chat/date_separator.dart';
 import '../../widgets/chat/media_panel.dart';
@@ -972,13 +973,17 @@ class _GroupChatPageState extends State<GroupChatPage> {
     try {
       bool alreadyClaimed = false;
       double claimedAmount = 0;
+      String senderEffectKey = 'none';
       try {
         final detail = await WalletService().getRedPacketDetail(redPacketId);
-        if (detail != null && detail.hasClaimed) {
-          alreadyClaimed = true;
-          claimedAmount = detail.myClaim!.amount;
-          if (!_claimedRedPacketIds.contains(redPacketId)) {
-            setState(() => _claimedRedPacketIds.add(redPacketId));
+        if (detail != null) {
+          senderEffectKey = detail.senderEffectKey;
+          if (detail.hasClaimed) {
+            alreadyClaimed = true;
+            claimedAmount = detail.myClaim!.amount;
+            if (!_claimedRedPacketIds.contains(redPacketId)) {
+              setState(() => _claimedRedPacketIds.add(redPacketId));
+            }
           }
         }
       } catch (_) {}
@@ -996,6 +1001,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
           greeting: greeting,
           alreadyClaimed: alreadyClaimed,
           claimedAmount: claimedAmount,
+          senderEffectKey: senderEffectKey,
         ),
       );
 
@@ -1585,7 +1591,10 @@ class _GroupChatPageState extends State<GroupChatPage> {
       nickname: displayName,
       timeText: _formatTime(msg.createdAt),
       isMe: isMe,
-      avatar: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36, isOfficial: msg.isOfficialService),
+      avatar: VipAvatarFrame(
+        vip: msg.senderVip,
+        child: AvatarWidget(avatarPath: msg.avatar, name: msg.nickname, size: 36, isOfficial: msg.isOfficialService),
+      ),
       onLongPress: _isMultiSelectMode ? null : (rect) => _showMessageActions(msg, isMe, rect),
       onAvatarTap: isMe ? null : () => UserProfilePage.show(
         context,
@@ -1597,6 +1606,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
       ),
       onAvatarLongPress: isMe ? null : () => _mentionUserDirectly(msg.userId, displayName),
       content: _buildBubbleContent(msg, isMe),
+      senderVip: msg.senderVip,
     );
 
     if (_isMultiSelectMode) {

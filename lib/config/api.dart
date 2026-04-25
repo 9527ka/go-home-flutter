@@ -33,6 +33,12 @@ class ApiConfig {
   static const String postDetail = '/api/post/detail';
   static const String postMine = '/api/post/mine';
   static const String postUpdateStatus = '/api/post/updateStatus';
+  static const String postNearby = '/api/post/nearby';
+  static const String userLocation = '/api/user/location';
+  static const String postMarkFound = '/api/post/markFound';
+  static const String postFoundStorySubmit = '/api/post/found-story';
+  static const String postFoundStoryList = '/api/post/found-stories';
+  static const String postFoundStoryDetail = '/api/post/found-story';
 
   static const String clueCreate = '/api/clue/create';
   static const String clueList = '/api/clue/list';
@@ -134,6 +140,18 @@ class ApiConfig {
   static const String redPacketSend = '/api/red-packet/send';
   static const String redPacketClaim = '/api/red-packet/claim';
   static const String redPacketDetail = '/api/red-packet/detail';
+
+  // VIP
+  static const String vipLevels = '/api/vip/levels';
+  static const String vipMy = '/api/vip/my';
+  static const String vipPurchase = '/api/vip/purchase';
+  static const String vipOrders = '/api/vip/orders';
+
+  // 抽奖
+  static const String lotteryInfo = '/api/lottery/info';
+  static const String lotteryDraw = '/api/lottery/draw';
+  static const String lotteryLogs = '/api/lottery/logs';
+  static const String lotteryRecent = '/api/lottery/recent';
 
   // 点赞
   static const String likeToggle = '/api/like/toggle';

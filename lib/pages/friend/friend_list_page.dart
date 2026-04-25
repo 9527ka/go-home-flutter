@@ -7,6 +7,7 @@ import '../../models/friend.dart';
 import '../../providers/conversation_provider.dart';
 import '../../providers/friend_provider.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/vip_decoration.dart';
 
 class FriendListPage extends StatefulWidget {
   const FriendListPage({super.key});
@@ -186,21 +187,34 @@ class _FriendListPageState extends State<FriendListPage> {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                AvatarWidget(avatarPath: friend.avatar, name: displayName, size: 36, isOfficial: friend.isOfficialService),
+                VipAvatarFrame(
+                  vip: friend.vip,
+                  child: AvatarWidget(avatarPath: friend.avatar, name: displayName, size: 36, isOfficial: friend.isOfficialService),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        displayName,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: VipNickname(
+                              vip: friend.vip,
+                              text: displayName,
+                              baseStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: AppTheme.textPrimary,
+                              ),
+                              maxLines: 1,
+                            ),
+                          ),
+                          if (friend.vip != null && !friend.vip!.isNormal) ...[
+                            const SizedBox(width: 4),
+                            VipLevelBadge(vip: friend.vip, fontSize: 9),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(

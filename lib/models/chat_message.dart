@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'vip.dart';
 
 /// 消息类型
 enum ChatMsgType {
@@ -43,6 +44,9 @@ class ChatMessageModel {
   /// 发送失败的错误码（如 NOT_FRIEND）
   final String? errorCode;
 
+  /// 发送者 VIP 快照（普通/过期为 null）
+  final VipBadgeModel? senderVip;
+
   ChatMessageModel({
     this.id,
     required this.userId,
@@ -60,6 +64,7 @@ class ChatMessageModel {
     this.clientMsgId,
     this.sendStatus = SendStatus.sent,
     this.errorCode,
+    this.senderVip,
   });
 
   ChatMessageModel copyWith({
@@ -79,6 +84,7 @@ class ChatMessageModel {
     String? clientMsgId,
     SendStatus? sendStatus,
     String? errorCode,
+    VipBadgeModel? senderVip,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -97,6 +103,7 @@ class ChatMessageModel {
       clientMsgId: clientMsgId ?? this.clientMsgId,
       sendStatus: sendStatus ?? this.sendStatus,
       errorCode: errorCode ?? this.errorCode,
+      senderVip: senderVip ?? this.senderVip,
     );
   }
 
@@ -122,6 +129,9 @@ class ChatMessageModel {
       mentions: _parseMentions(json['mentions']),
       clientMsgId: json['client_msg_id'] as String?,
       sendStatus: SendStatus.sent,
+      senderVip: VipBadgeModel.tryParse(json['sender_vip'])
+          ?? VipBadgeModel.tryParse(user?['vip'])
+          ?? VipBadgeModel.tryParse(fromUser?['vip']),
     );
   }
 

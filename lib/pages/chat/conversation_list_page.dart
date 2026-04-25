@@ -15,6 +15,7 @@ import '../../services/chat_database.dart';
 import '../../services/group_service.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/group_grid_avatar.dart';
+import '../../widgets/vip_decoration.dart';
 
 class ConversationListPage extends StatefulWidget {
   const ConversationListPage({super.key});
@@ -753,7 +754,10 @@ class _ConversationListPageState extends State<ConversationListPage> {
                         names: conv.memberNames,
                         size: 48,
                       )
-                    : AvatarWidget(avatarPath: conv.avatar, name: conv.name, size: 48, isOfficial: conv.isOfficialService),
+                    : VipAvatarFrame(
+                        vip: conv.targetVip,
+                        child: AvatarWidget(avatarPath: conv.avatar, name: conv.name, size: 48, isOfficial: conv.isOfficialService),
+                      ),
                 unreadCount: conv.unreadCount,
                 isMuted: isMuted,
               ),
@@ -769,17 +773,21 @@ class _ConversationListPageState extends State<ConversationListPage> {
                           child: Row(
                             children: [
                               Flexible(
-                                child: Text(
-                                  conv.name.isNotEmpty ? conv.name : l.get('unknown_user'),
-                                  style: const TextStyle(
+                                child: VipNickname(
+                                  vip: conv.targetVip,
+                                  text: conv.name.isNotEmpty ? conv.name : l.get('unknown_user'),
+                                  baseStyle: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w500,
                                     color: AppTheme.textPrimary,
                                   ),
                                   maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (conv.targetVip != null && !conv.targetVip!.isNormal) ...[
+                                const SizedBox(width: 4),
+                                VipLevelBadge(vip: conv.targetVip, fontSize: 9),
+                              ],
                               if (isMuted) ...[
                                 const SizedBox(width: 4),
                                 const Icon(Icons.notifications_off_outlined, size: 14, color: AppTheme.textHint),

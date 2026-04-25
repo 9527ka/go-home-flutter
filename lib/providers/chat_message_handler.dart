@@ -145,6 +145,7 @@ class ChatMessageHandler {
       data['content'] = jsonEncode({
         'red_packet_id': data['red_packet_id'] ?? 0,
         'greeting': data['greeting'] ?? '',
+        'sender_vip_level': data['sender_vip_level'] ?? 'normal',
       });
     }
     final rpMsg = ChatMessageModel.fromJson(data);

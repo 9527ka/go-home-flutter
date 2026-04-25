@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +28,9 @@ class _RechargePageState extends State<RechargePage> {
   final _iap = IapService.instance;
   String? _selectedProductId;
   bool _purchasing = false;
+  bool _iapLoading = false;
+  String? _iapError;
+  int _pendingReceiptCount = 0;
 
   // USDT
   final _walletService = WalletService();
@@ -41,6 +45,10 @@ class _RechargePageState extends State<RechargePage> {
   void initState() {
     super.initState();
     if (!_useUsdt) {
+      // 注册统一回调（不要在 _purchase 里二次包装，避免 onSuccess 链式累加造成
+      // 多次 loadOrders / refresh / snack 闪现）
+      _iap.onPurchaseSuccess = _handleIapSuccess;
+      _iap.onPurchaseError = _handleIapError;
       _initIap();
     }
     _loadOrders();
@@ -50,11 +58,72 @@ class _RechargePageState extends State<RechargePage> {
     }
   }
 
-  Future<void> _initIap() async {
-    await _iap.ensureInitialized();
-    if (_iap.products.isEmpty) {
-      await _iap.loadProducts();
+  void _handleIapSuccess() {
+    if (!mounted) return;
+    if (_purchasing) setState(() => _purchasing = false);
+    final l = AppLocalizations.of(context)!;
+    _showSnack(l.get('purchase_success'), success: true);
+    _loadOrders();
+    context.read<WalletProvider>().refresh();
+    _iap.pendingReceiptsCount().then((c) {
+      if (mounted) setState(() => _pendingReceiptCount = c);
+    });
+  }
+
+  void _handleIapError(String error) {
+    if (!mounted) return;
+    if (_purchasing) setState(() => _purchasing = false);
+    final l = AppLocalizations.of(context)!;
+    _showSnack('${l.get('purchase_failed')}: $error');
+    _iap.pendingReceiptsCount().then((c) {
+      if (mounted) setState(() => _pendingReceiptCount = c);
+    });
+  }
+
+  Future<void> _initIap({bool force = false}) async {
+    if (_iapLoading) return;
+    if (mounted) {
+      setState(() {
+        _iapLoading = true;
+        _iapError = null;
+      });
     }
+    try {
+      if (force) {
+        await _iap.forceReinitialize().timeout(const Duration(seconds: 15));
+      } else {
+        await _iap.ensureInitialized().timeout(const Duration(seconds: 15));
+      }
+      if (_iap.isAvailable && _iap.products.isEmpty) {
+        await _iap.loadProducts();
+      }
+      _pendingReceiptCount = await _iap.pendingReceiptsCount();
+      if (!_iap.isAvailable) {
+        _iapError = '商店不可用（可能未登录 Apple ID 或网络问题）';
+      } else if (_iap.products.isEmpty) {
+        _iapError = '商品列表加载失败，请重试';
+      }
+    } on TimeoutException {
+      _iapError = '加载超时，请检查网络后重试';
+    } catch (e) {
+      _iapError = '加载失败：$e';
+    } finally {
+      if (mounted) setState(() => _iapLoading = false);
+    }
+  }
+
+  /// 手动补发（用户付了款但币没到账）
+  Future<void> _retryPending() async {
+    final count = await _iap.retryPendingReceipts();
+    if (!mounted) return;
+    if (count > 0) {
+      _showSnack('成功补发 $count 笔交易', success: true);
+      _loadOrders();
+      context.read<WalletProvider>().refresh();
+    } else {
+      _showSnack('暂无可补发交易');
+    }
+    _pendingReceiptCount = await _iap.pendingReceiptsCount();
     if (mounted) setState(() {});
   }
 
@@ -102,20 +171,7 @@ class _RechargePageState extends State<RechargePage> {
     }
     final product = _iap.products[idx];
 
-    _iap.onPurchaseSuccess = () {
-      if (!mounted || !_purchasing) return;
-      setState(() => _purchasing = false);
-      _showSnack(l.get('purchase_success'), success: true);
-      _loadOrders();
-      context.read<WalletProvider>().refresh();
-    };
-
-    _iap.onPurchaseError = (error) {
-      if (!mounted || !_purchasing) return;
-      setState(() => _purchasing = false);
-      _showSnack('${l.get('purchase_failed')}: $error');
-    };
-
+    // onPurchaseSuccess / onPurchaseError 已在 initState 注册，这里只需触发购买
     setState(() => _purchasing = true);
 
     try {
@@ -401,19 +457,38 @@ class _RechargePageState extends State<RechargePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          l.get('coin_packs'),
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l.get('coin_packs'),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+              ),
+            ),
+            if (_pendingReceiptCount > 0)
+              TextButton.icon(
+                onPressed: _retryPending,
+                icon: const Icon(Icons.refresh, size: 16, color: AppTheme.warningColor),
+                label: Text(
+                  '补发 $_pendingReceiptCount 笔',
+                  style: const TextStyle(fontSize: 12, color: AppTheme.warningColor),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
 
-        if (!_iap.isAvailable)
-          _buildUnavailableHint(l)
-        else if (_iap.products.isEmpty)
+        if (_iapLoading)
           const Center(child: Padding(
             padding: EdgeInsets.all(16),
             child: CircularProgressIndicator(),
           ))
+        else if (_iapError != null)
+          _buildErrorHint(_iapError!)
+        else if (!_iap.isAvailable)
+          _buildUnavailableHint(l)
+        else if (_iap.products.isEmpty)
+          _buildErrorHint('商品列表为空')
         else
           _buildProductGrid(),
 
@@ -423,7 +498,7 @@ class _RechargePageState extends State<RechargePage> {
           width: double.infinity,
           height: 44,
           child: ElevatedButton(
-            onPressed: (_purchasing || _selectedProductId == null) ? null : _purchase,
+            onPressed: (_iapLoading || _purchasing || _selectedProductId == null) ? null : _purchase,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.successColor,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -440,6 +515,44 @@ class _RechargePageState extends State<RechargePage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildErrorHint(String msg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.dangerColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.error_outline, color: AppTheme.dangerColor, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(msg, style: const TextStyle(color: AppTheme.dangerColor, fontSize: 13)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: 100,
+            height: 32,
+            child: OutlinedButton(
+              onPressed: () => _initIap(force: true),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppTheme.dangerColor),
+                padding: EdgeInsets.zero,
+              ),
+              child: const Text('重试', style: TextStyle(color: AppTheme.dangerColor, fontSize: 13)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

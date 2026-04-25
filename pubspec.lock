@@ -33,6 +33,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  atomic_x_core:
+    dependency: transitive
+    description:
+      name: atomic_x_core
+      sha256: "110160971bd8d1552d5ac0da265e85952c129c0c370c186327e8b9283b6c25cd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.2"
   audio_session:
     dependency: "direct main"
     description:
@@ -137,6 +145,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  cupertino_icons:
+    dependency: transitive
+    description:
+      name: cupertino_icons
+      sha256: "41e005c33bd814be4d3096aff55b1908d419fde52ca656c8c47719ec745873cd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.9"
   dio:
     dependency: "direct main"
     description:
@@ -341,6 +357,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "8.2.14"
+  gal:
+    dependency: "direct main"
+    description:
+      name: gal
+      sha256: "969598f986789127fd407a750413249e1352116d4c2be66e81837ffeeaafdfee"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.2"
   geolocator:
     dependency: "direct main"
     description:
@@ -565,6 +589,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.1"
+  js:
+    dependency: transitive
+    description:
+      name: js
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.6.7"
   json_annotation:
     dependency: transitive
     description:
@@ -629,6 +661,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.0"
+  logging:
+    dependency: transitive
+    description:
+      name: logging
+      sha256: c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.3.0"
   matcher:
     dependency: transitive
     description:
@@ -661,6 +701,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.6"
+  mime_type:
+    dependency: transitive
+    description:
+      name: mime_type
+      sha256: d652b613e84dac1af28030a9fba82c0999be05b98163f9e18a0849c6e63838bb
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   mobile_scanner:
     dependency: "direct main"
     description:
@@ -933,6 +981,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.7"
+  rtc_room_engine:
+    dependency: transitive
+    description:
+      name: rtc_room_engine
+      sha256: a9331ddcdc7e221963724b2b6b6706ff59e96b705270898de01365e240683904
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.1"
+  rtc_room_engine_impl:
+    dependency: transitive
+    description:
+      name: rtc_room_engine_impl
+      sha256: c583ec2bfd7a7cf38a2d436e39d4f3c66d4e52de0fb30a78f5409043272e93d7
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.1"
   rxdart:
     dependency: transitive
     description:
@@ -1122,6 +1186,38 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.0"
+  tencent_calls_uikit:
+    dependency: "direct main"
+    description:
+      name: tencent_calls_uikit
+      sha256: "9e1792b16831cc85d2f9000e5825199229fd3be6cb3209ffc61a0af3567d3910"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.8"
+  tencent_cloud_chat_sdk:
+    dependency: transitive
+    description:
+      name: tencent_cloud_chat_sdk
+      sha256: "95bf4b8fc43c59576e74fbe8943f8e16de643fc87fa9029f56f547e3fa8815eb"
+      url: "https://pub.dev"
+    source: hosted
+    version: "8.9.7540+2"
+  tencent_cloud_uikit_core:
+    dependency: transitive
+    description:
+      name: tencent_cloud_uikit_core
+      sha256: fcc102c9000c15df9ad0e1b0ba66f23192a237018805380c77530cdf3b73a14f
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.7.6"
+  tencent_rtc_sdk:
+    dependency: transitive
+    description:
+      name: tencent_rtc_sdk
+      sha256: b54bb9aca089a40d162eff6e968406a375b91419fbfa07b032aed6be28aa6b2a
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.2.1"
   term_glyph:
     dependency: transitive
     description:
@@ -1138,6 +1234,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7"
+  tuikit_atomic_x:
+    dependency: transitive
+    description:
+      name: tuikit_atomic_x
+      sha256: c115c59908e6b681737f39b7a7bee03df4504d86299a71352b077c356c6f000f
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.2"
   typed_data:
     dependency: transitive
     description:
